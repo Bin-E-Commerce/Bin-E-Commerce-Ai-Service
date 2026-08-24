@@ -1,0 +1,16 @@
+{
+  "name": "@bin-ecommerce/ai-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Python FastAPI AI service for Bin E-Commerce seller and customer workflows",
+  "scripts": {
+    "dev": "python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 3009",
+    "start": "python -m uvicorn app.main:app --host 0.0.0.0 --port 3009",
+    "test": "python -m pytest -q",
+    "lint": "python -m ruff check app tests",
+    "format": "python -m ruff format app tests",
+    "format:check": "python -m ruff format --check app tests",
+    "type-check": "python -m mypy app",
+    "check": "npm run lint && npm run format:check && npm run type-check && npm run test"
+  }
+}

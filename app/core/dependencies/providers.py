@@ -6,7 +6,10 @@ from fastapi import Depends, Header, Request
 
 from app.core.config import Settings, get_settings
 from app.core.security import UserContext, build_user_context
-from app.modules.product_content.application.service import ProductNameSuggestionService
+from app.modules.product_content.application.service import (
+    ProductDescriptionSuggestionService,
+    ProductNameSuggestionService,
+)
 from app.modules.product_content.infrastructure.provider_factory import build_llm_provider
 
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
@@ -37,5 +40,20 @@ def get_product_name_service(
         provider=provider,
         cache=cache,
         rate_limiter=rate_limiter,
+        settings=settings,
+    )
+
+
+# Wiring use case mô tả qua cùng provider/cache/quota; route không cần biết adapter OpenAI cụ thể.
+def get_product_description_service(
+    request: Request,
+    settings: SettingsDependency,
+) -> ProductDescriptionSuggestionService:
+    """Tạo application service mô tả với các dependency dùng chung theo process."""
+
+    return ProductDescriptionSuggestionService(
+        provider=build_llm_provider(settings),
+        cache=request.app.state.result_cache,
+        rate_limiter=request.app.state.rate_limiter,
         settings=settings,
     )

@@ -10,6 +10,7 @@ from app.modules.product_content.domain.models import ProductContext, ProductIma
 
 # Đồng bộ version với prompt để thay đổi công thức tên không trả lại kết quả cache của prompt cũ.
 CACHE_KEY_VERSION = "product-name-v2"
+DESCRIPTION_CACHE_KEY_VERSION = "product-description-v1"
 
 
 # Giữ asset ID để tạo fingerprint cache nhưng loại nó khỏi context gửi sang LLM.
@@ -70,6 +71,55 @@ class NameSuggestionCommand:
             brand=self.brand,
             draft_name=self.draft_name,
             short_description=self.short_description,
+            description=self.description,
+            attributes=self.attributes,
+            images=tuple(ProductImage(public_url=image.public_url, file_name=image.file_name) for image in self.images),
+            locale=self.locale,
+        )
+
+
+# Command cho use case mô tả dùng cùng context an toàn nhưng có version cache riêng với tên sản phẩm.
+@dataclass(frozen=True)
+class DescriptionSuggestionCommand:
+    """Input đã chuẩn hóa để sinh một bản mô tả hoàn chỉnh, không chứa user ID trong provider context."""
+
+    category_name: str
+    category_path: str | None
+    brand: str | None
+    draft_name: str | None
+    description: str | None
+    attributes: tuple[tuple[str, str], ...]
+    images: tuple[ImageCommand, ...]
+    locale: str
+
+    # Fingerprint có version riêng để thay đổi prompt mô tả không dùng nhầm kết quả tên cũ.
+    def cache_key(self) -> str:
+        """Tạo hash input ổn định; không lưu payload thô hoặc prompt vào cache."""
+
+        payload = {
+            "prompt_version": DESCRIPTION_CACHE_KEY_VERSION,
+            "category_name": self.category_name,
+            "category_path": self.category_path,
+            "brand": self.brand,
+            "draft_name": self.draft_name,
+            "description": self.description,
+            "attributes": self.attributes,
+            "images": tuple((image.asset_id, image.file_name) for image in self.images),
+            "locale": self.locale,
+        }
+        serialized = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+    # Chỉ chuyển public URL và facts đã chuẩn hóa sang provider; asset ID vẫn chỉ phục vụ fingerprint.
+    def to_provider_context(self) -> ProductContext:
+        """Chuyển command thành ProductContext không có định danh nội bộ."""
+
+        return ProductContext(
+            category_name=self.category_name,
+            category_path=self.category_path,
+            brand=self.brand,
+            draft_name=self.draft_name,
+            short_description=None,
             description=self.description,
             attributes=self.attributes,
             images=tuple(ProductImage(public_url=image.public_url, file_name=image.file_name) for image in self.images),

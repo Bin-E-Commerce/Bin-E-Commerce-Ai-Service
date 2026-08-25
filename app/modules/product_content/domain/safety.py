@@ -59,3 +59,37 @@ def sanitize_title(title: str) -> tuple[str, tuple[SafetyWarning, ...]]:
             ),
         )
     return sanitized, warnings
+
+
+# Làm sạch bản mô tả sau structured output để không đưa định danh, liên hệ hoặc nội dung social vào form seller.
+# Hàm vẫn giữ các section/bullet hợp lệ, chỉ bỏ token nhạy cảm và chuẩn hóa khoảng trắng dư thừa.
+def sanitize_description(description: str) -> tuple[str, tuple[SafetyWarning, ...]]:
+    """Loại dữ liệu nhạy cảm khỏi mô tả và trả warning không chứa giá trị gốc."""
+
+    sanitized = description.strip()
+    detected: list[str] = []
+    for pattern, label in _SENSITIVE_PATTERNS:
+        if pattern.search(sanitized):
+            detected.append(label)
+            sanitized = pattern.sub("", sanitized)
+
+    # Hashtag/emoji không phù hợp với mô tả marketplace chuẩn hóa, nhưng không xóa dấu tiếng Việt.
+    if re.search(r"(?<!\w)#\S+", sanitized):
+        detected.append("hashtag")
+        sanitized = re.sub(r"(?<!\w)#\S+", "", sanitized)
+    if re.search(r"[\U0001F000-\U0001FAFF]", sanitized):
+        detected.append("emoji")
+        sanitized = re.sub(r"[\U0001F000-\U0001FAFF]", "", sanitized)
+
+    sanitized = re.sub(r"[ \t]+", " ", sanitized)
+    sanitized = re.sub(r"\n{3,}", "\n\n", sanitized).strip()
+    warnings: tuple[SafetyWarning, ...] = ()
+    if detected:
+        warnings = (
+            SafetyWarning(
+                code="SENSITIVE_DATA",
+                field="description",
+                message="Mô tả đã được loại bỏ thông tin nhận diện hoặc nội dung không phù hợp.",
+            ),
+        )
+    return sanitized, warnings

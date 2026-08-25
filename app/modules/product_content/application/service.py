@@ -6,14 +6,18 @@ from uuid import uuid4
 
 from app.core.config import Settings
 from app.core.errors import InvalidInputError, InvalidProviderResponseError
-from app.modules.product_content.application.commands import NameSuggestionCommand
-from app.modules.product_content.domain.models import GeneratedName, SafetyWarning, SuggestionBatch
-from app.modules.product_content.domain.ports import (
-    LLMNameSuggestionProvider,
-    RateLimiter,
-    ResultCache,
+from app.modules.product_content.application.commands import (
+    DescriptionSuggestionCommand,
+    NameSuggestionCommand,
 )
-from app.modules.product_content.domain.safety import redact_sensitive_text, sanitize_title
+from app.modules.product_content.domain.models import (
+    DescriptionBatch,
+    GeneratedName,
+    SafetyWarning,
+    SuggestionBatch,
+)
+from app.modules.product_content.domain.ports import LLMProductContentProvider, RateLimiter, ResultCache
+from app.modules.product_content.domain.safety import redact_sensitive_text, sanitize_description, sanitize_title
 
 
 # Đây là điểm duy nhất điều phối nghiệp vụ, giúp router mỏng và provider có thể thay thế.
@@ -23,7 +27,7 @@ class ProductNameSuggestionService:
     # Nhận các port thay vì concrete adapter để unit test không gọi mạng hoặc tiêu tiền.
     def __init__(
         self,
-        provider: LLMNameSuggestionProvider,
+        provider: LLMProductContentProvider,
         cache: ResultCache,
         rate_limiter: RateLimiter,
         settings: Settings,
@@ -41,7 +45,7 @@ class ProductNameSuggestionService:
 
         self._validate_command_limits(command)
         await self._rate_limiter.check(
-            key=f"ai:name-suggestions:{user_id}",
+            key=f"ai:product-content:{user_id}",
             limit=self._settings.ai_rate_limit_requests,
             window_seconds=self._settings.ai_rate_limit_window_seconds,
         )
@@ -49,7 +53,7 @@ class ProductNameSuggestionService:
         # Cache hit trả lại kết quả đã sanitize, tránh gọi LLM lặp và phát sinh chi phí.
         cache_key = command.cache_key()
         cached = await self._cache.get(cache_key)
-        if cached is not None:
+        if isinstance(cached, SuggestionBatch):
             return str(uuid4()), cached
 
         generated = await self._provider.generate_name_suggestions(command.to_provider_context())
@@ -110,3 +114,61 @@ class ProductNameSuggestionService:
         )
         unique_warnings = tuple({(warning.code, warning.field): warning for warning in warnings}.values())
         return SuggestionBatch(suggestions=normalized_suggestions, warnings=unique_warnings)
+
+
+# Điều phối riêng use case mô tả để quota/cache/provider có thể mở rộng mà không làm service tên bị phức tạp.
+class ProductDescriptionSuggestionService:
+    """Validate, cache và sinh một bản mô tả sản phẩm an toàn bằng LLM."""
+
+    # Nhận provider/cache/rate limiter qua port để unit test không gọi OpenAI hoặc Redis thật.
+    def __init__(
+        self,
+        provider: LLMProductContentProvider,
+        cache: ResultCache,
+        rate_limiter: RateLimiter,
+        settings: Settings,
+    ) -> None:
+        self._provider = provider
+        self._cache = cache
+        self._rate_limiter = rate_limiter
+        self._settings = settings
+
+    # Validate giới hạn → rate limit → cache → gọi LLM → sanitize → cache, nhằm kiểm soát chi phí theo seller.
+    async def generate(self, command: DescriptionSuggestionCommand, user_id: str) -> tuple[str, DescriptionBatch]:
+        """Sinh mô tả duy nhất và chỉ cache nội dung đã vượt qua safety validator."""
+
+        self._validate_command_limits(command)
+        await self._rate_limiter.check(
+            key=f"ai:product-content:{user_id}",
+            limit=self._settings.ai_rate_limit_requests,
+            window_seconds=self._settings.ai_rate_limit_window_seconds,
+        )
+        cached = await self._cache.get(command.cache_key())
+        if isinstance(cached, DescriptionBatch):
+            return str(uuid4()), cached
+
+        generated = await self._provider.generate_description(command.to_provider_context())
+        description, warnings = sanitize_description(generated)
+        if not 100 <= len(description) <= 30_000:
+            raise InvalidProviderResponseError()
+        result = DescriptionBatch(description=description, warnings=warnings)
+        await self._cache.set(command.cache_key(), result, self._settings.ai_cache_ttl_seconds)
+        return str(uuid4()), result
+
+    # Chặn payload quá lớn trước khi tiêu quota hoặc gửi dữ liệu ra provider có tính phí.
+    def _validate_command_limits(self, command: DescriptionSuggestionCommand) -> None:
+        """Kiểm tra số ảnh, độ dài text và yêu cầu có ít nhất một ảnh CDN."""
+
+        if not 1 <= len(command.images) <= self._settings.ai_max_images:
+            raise InvalidInputError()
+        text_values = [
+            command.category_name,
+            command.category_path,
+            command.brand,
+            command.draft_name,
+            command.description,
+            *(value for pair in command.attributes for value in pair),
+            *(image.file_name for image in command.images),
+        ]
+        if sum(len(value or "") for value in text_values) > self._settings.ai_max_text_chars:
+            raise InvalidInputError()

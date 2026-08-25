@@ -3,16 +3,29 @@
 from collections.abc import Sequence
 from typing import Protocol
 
-from app.modules.product_content.domain.models import GeneratedName, ProductContext, SuggestionBatch
+from app.modules.product_content.domain.models import (
+    DescriptionBatch,
+    GeneratedName,
+    ProductContext,
+    SuggestionBatch,
+)
 
 
 # Port này giúp use case không phụ thuộc OpenAI; Anthropic/Gemini/local model chỉ cần implement protocol.
-class LLMNameSuggestionProvider(Protocol):
-    """Hợp đồng sinh tên sản phẩm cho mọi LLM adapter."""
+class LLMProductContentProvider(Protocol):
+    """Hợp đồng chung cho mọi use case sinh nội dung sản phẩm bằng LLM."""
 
     # Provider nhận domain context và trả ứng viên, không được tự đọc HTTP header hay cache.
     async def generate_name_suggestions(self, context: ProductContext) -> Sequence[GeneratedName]:
         """Sinh ứng viên mà không biết chi tiết HTTP, auth, cache hoặc persistence."""
+
+    # Provider trả một nội dung mô tả duy nhất để seller xem trước trước khi áp dụng vào form.
+    async def generate_description(self, context: ProductContext) -> str:
+        """Sinh mô tả tiếng Việt từ facts đã được application layer kiểm soát."""
+
+
+# Alias giữ tương thích với các test/adapter cũ trong khi provider đã trở thành hợp đồng nội dung chung.
+LLMNameSuggestionProvider = LLMProductContentProvider
 
 
 # Cache port tách khỏi use case để local dùng memory, production có thể thay Redis.
@@ -20,11 +33,11 @@ class ResultCache(Protocol):
     """Hợp đồng cache response đã được sanitize và giới hạn TTL."""
 
     # Đọc cache theo fingerprint, không tìm theo nội dung thô hoặc user secret.
-    async def get(self, key: str) -> SuggestionBatch | None:
+    async def get(self, key: str) -> SuggestionBatch | DescriptionBatch | None:
         """Đọc kết quả cache không chứa dữ liệu nhạy cảm."""
 
     # Ghi kết quả có TTL để tránh cache vô thời hạn dữ liệu product content.
-    async def set(self, key: str, value: SuggestionBatch, ttl_seconds: int) -> None:
+    async def set(self, key: str, value: SuggestionBatch | DescriptionBatch, ttl_seconds: int) -> None:
         """Lưu kết quả với thời hạn hết hạn rõ ràng."""
 
 

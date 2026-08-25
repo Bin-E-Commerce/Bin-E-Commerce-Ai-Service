@@ -55,3 +55,13 @@ class SuggestionBatch:
 
     suggestions: tuple[GeneratedName, ...]
     warnings: tuple[SafetyWarning, ...]
+
+
+# Đại diện cho một bản mô tả hoàn chỉnh đã được provider sinh và safety validator kiểm tra.
+# Mô tả giữ nguyên cấu trúc section/bullet để frontend chỉ cần hiển thị và seller xác nhận.
+@dataclass(frozen=True)
+class DescriptionBatch:
+    """Một mô tả sản phẩm an toàn kèm cảnh báo đã được chuẩn hóa."""
+
+    description: str
+    warnings: tuple[SafetyWarning, ...]

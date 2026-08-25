@@ -6,7 +6,7 @@ import pytest
 from app.core.config import Settings, get_settings
 from app.core.dependencies import get_product_name_service
 from app.main import create_app
-from app.modules.product_content.domain.models import GeneratedName, SuggestionBatch
+from app.modules.product_content.domain.models import DescriptionBatch, GeneratedName, SuggestionBatch
 
 
 # Fake service cô lập route khỏi OpenAI để test không gửi request trả phí.
@@ -20,6 +20,22 @@ class FakeService:
                     GeneratedName("Premium Vietnamese leather shoes for office", "Clear category.", True),
                     GeneratedName("Comfortable leather shoes for daily business outfits", "Useful context.", False),
                     GeneratedName("Elegant men's leather shoes with soft sole", "Natural wording.", False),
+                ),
+                warnings=(),
+            ),
+        )
+
+
+# Fake use case mô tả để kiểm tra route mapping mà không khởi tạo OpenAI client thật.
+class FakeDescriptionService:
+    # Trả mô tả có cấu trúc và requestId cố định để assertion không phụ thuộc random UUID.
+    async def generate(self, command, user_id):
+        return (
+            "description-request-1",
+            DescriptionBatch(
+                description=(
+                    "Điểm nổi bật:\n- Chất liệu da\n- Thiết kế êm chân\n\n"
+                    "Mô tả chi tiết:\nSản phẩm phù hợp cho nhu cầu sử dụng hằng ngày của người dùng."
                 ),
                 warnings=(),
             ),
@@ -82,3 +98,30 @@ async def test_route_returns_structured_suggestions() -> None:
     assert len(body["suggestions"]) == 3
     assert body["suggestions"][0]["recommended"] is True
     assert body["requestId"] == "request-1"
+
+
+@pytest.mark.asyncio
+# Permission hợp lệ phải map mô tả và requestId đúng contract public của endpoint mới.
+async def test_description_route_returns_single_description() -> None:
+    application = create_app()
+    from app.core.dependencies import get_product_description_service
+
+    application.dependency_overrides[get_product_description_service] = lambda: FakeDescriptionService()
+    application.dependency_overrides[get_settings] = lambda: Settings(media_public_cdn_url="https://cdn.example.com")
+    transport = httpx.ASGITransport(app=application)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/seller/product-content/description-suggestions",
+                json=request_body(),
+                headers={
+                    "x-user-id": "seller-1",
+                    "x-user-permissions": "seller.ai.product_content.generate",
+                },
+            )
+    finally:
+        application.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["requestId"] == "description-request-1"
+    assert "Điểm nổi bật" in response.json()["description"]

@@ -1,7 +1,7 @@
 """Kiểm tra prompt marketplace và ranh giới redact trước khi gửi dữ liệu tới LLM."""
 
 from app.modules.product_content.domain.models import ProductContext, ProductImage
-from app.modules.product_content.infrastructure.prompt_builder import build_prompt
+from app.modules.product_content.infrastructure.prompt_builder import build_description_prompt, build_prompt
 
 
 # Tạo context tối thiểu nhưng có thuộc tính kỹ thuật để kiểm tra prompt giữ đúng công thức ngành hàng.
@@ -27,3 +27,13 @@ def test_prompt_contains_marketplace_naming_rules() -> None:
     assert "Never invent RAM, ROM, CPU, SSD, GPU" in prompt.system
     assert "exactly three suggestions" in prompt.system
     assert "Category: Giày dép" in prompt.user
+
+
+# Prompt mô tả phải ép cấu trúc section và nguyên tắc không bịa facts trước khi provider gọi model.
+def test_description_prompt_contains_structured_marketplace_rules() -> None:
+    prompt = build_description_prompt(product_context())
+
+    assert "Điểm nổi bật:" in prompt.system
+    assert "Mô tả chi tiết:" in prompt.system
+    assert "invent specifications" in prompt.system
+    assert "550e8400" not in prompt.user

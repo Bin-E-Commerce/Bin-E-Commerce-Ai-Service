@@ -4,8 +4,15 @@ import pytest
 
 from app.core.config import Settings
 from app.core.errors import InvalidProviderResponseError
-from app.modules.product_content.application.commands import ImageCommand, NameSuggestionCommand
-from app.modules.product_content.application.service import ProductNameSuggestionService
+from app.modules.product_content.application.commands import (
+    DescriptionSuggestionCommand,
+    ImageCommand,
+    NameSuggestionCommand,
+)
+from app.modules.product_content.application.service import (
+    ProductDescriptionSuggestionService,
+    ProductNameSuggestionService,
+)
 from app.modules.product_content.domain.models import GeneratedName
 from app.modules.product_content.infrastructure.memory_cache import MemoryResultCache
 from app.modules.product_content.infrastructure.memory_rate_limiter import MemoryRateLimiter
@@ -76,3 +83,38 @@ async def test_service_rejects_invalid_provider_shape() -> None:
 
     with pytest.raises(InvalidProviderResponseError):
         await service.generate(command(), "seller-1")
+
+
+# Fake provider mô phỏng nội dung đủ dài nhưng chứa URL để kiểm tra lớp safety sau provider.
+class DescriptionProvider:
+    # Trả mô tả có section marketplace và token nhạy cảm để service phải loại bỏ URL trước khi cache.
+    async def generate_description(self, context):
+        return "Điểm nổi bật:\n- Chất liệu bền\n- Thiết kế dễ dùng\n\nMô tả chi tiết:\nSản phẩm phù hợp sử dụng hằng ngày. https://internal.example/item"
+
+
+# Tạo command mô tả tối thiểu với ảnh CDN hợp lệ cho các test use case.
+def description_command() -> DescriptionSuggestionCommand:
+    return DescriptionSuggestionCommand(
+        category_name="Giày dép",
+        category_path=None,
+        brand="Bin",
+        draft_name="Giày da nam công sở",
+        description=None,
+        attributes=(("Chất liệu", "Da"),),
+        images=(ImageCommand("asset-description-1", "https://cdn.example.com/shoe.jpg", "shoe.jpg"),),
+        locale="vi-VN",
+    )
+
+
+@pytest.mark.asyncio
+# Hai lần gọi mô tả cùng input phải dùng batch đã sanitize trong cache và không gọi provider lần hai.
+async def test_description_service_sanitizes_and_caches_result() -> None:
+    provider = DescriptionProvider()
+    service = ProductDescriptionSuggestionService(provider, MemoryResultCache(), MemoryRateLimiter(), Settings())
+
+    _, first = await service.generate(description_command(), "seller-description")
+    _, second = await service.generate(description_command(), "seller-description")
+
+    assert "https://" not in first.description
+    assert len(first.description) >= 100
+    assert first == second

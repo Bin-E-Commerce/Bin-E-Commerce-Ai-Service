@@ -87,6 +87,11 @@ class NameSuggestionRequest(BaseModel):
     _trim_brand = field_validator("brand", mode="before")(_trim)
 
 
+# Request dùng chung context với gợi ý tên nhưng tách contract để frontend/backend dễ tiến hóa độc lập.
+class DescriptionSuggestionRequest(NameSuggestionRequest):
+    """Payload tạo một mô tả sản phẩm hoàn chỉnh bằng tiếng Việt."""
+
+
 # Schema một đề xuất để frontend hiển thị title, lý do và cờ đề xuất tốt nhất.
 class SuggestionResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
@@ -111,5 +116,14 @@ class NameSuggestionResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     suggestions: list[SuggestionResponse]
+    warnings: list[WarningResponse]
+    request_id: str = Field(alias="requestId")
+
+
+# Response chỉ trả nội dung đã safety-validate và warning công khai, không trả prompt/provider detail.
+class DescriptionSuggestionResponse(BaseModel):
+    """Mô tả đề xuất và warning để seller xem trước trước khi áp dụng vào form."""
+
+    description: str
     warnings: list[WarningResponse]
     request_id: str = Field(alias="requestId")

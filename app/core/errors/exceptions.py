@@ -45,8 +45,7 @@ class BackgroundConfigurationError(AppError):
     status_code = 503
     code = "AI_BACKGROUND_CONFIGURATION_ERROR"
     public_message = (
-        "Custom background generation is not configured. "
-        "Set AI_IMAGE_BACKGROUND_ENCRYPTION_KEY and restart API and worker."
+        "Custom background generation is not configured. Set AI_IMAGE_BACKGROUND_ENCRYPTION_KEY and restart API and worker."
     )
 
 

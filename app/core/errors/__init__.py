@@ -3,6 +3,7 @@
 from app.core.errors.exceptions import (
     AppError,
     AuthorizationError,
+    BackgroundConfigurationError,
     ConfigurationError,
     InvalidInputError,
     InvalidProviderResponseError,
@@ -13,6 +14,7 @@ from app.core.errors.exceptions import (
 __all__ = [
     "AppError",
     "AuthorizationError",
+    "BackgroundConfigurationError",
     "ConfigurationError",
     "InvalidInputError",
     "InvalidProviderResponseError",

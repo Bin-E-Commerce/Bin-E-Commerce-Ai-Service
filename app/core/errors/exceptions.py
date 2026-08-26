@@ -38,6 +38,18 @@ class ConfigurationError(AppError):
     public_message = "The AI provider is not configured."
 
 
+# Lỗi riêng cho workflow nền tùy chỉnh khi service chưa có khóa mã hóa dùng chung giữa API và worker.
+class BackgroundConfigurationError(AppError):
+    """Cấu hình bảo mật của mô tả background tùy chỉnh chưa sẵn sàng."""
+
+    status_code = 503
+    code = "AI_BACKGROUND_CONFIGURATION_ERROR"
+    public_message = (
+        "Custom background generation is not configured. "
+        "Set AI_IMAGE_BACKGROUND_ENCRYPTION_KEY and restart API and worker."
+    )
+
+
 # Lỗi này che chi tiết mạng/quota của provider để không làm lộ thông tin hệ thống ra API.
 class ProviderUnavailableError(AppError):
     """LLM provider timeout, lỗi mạng, hết quota hoặc tạm thời không khả dụng."""

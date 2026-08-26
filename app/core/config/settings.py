@@ -17,7 +17,10 @@ class Settings(BaseSettings):
 
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-4.1-mini"
+    openai_image_model: str = "gpt-image-2"
     openai_timeout_seconds: float = 20.0
+    openai_image_timeout_seconds: float = 120.0
+    openai_image_quality: Literal["low", "medium", "high"] = "medium"
     llm_provider: str = "openai"
 
     ai_max_images: int = 3
@@ -30,6 +33,29 @@ class Settings(BaseSettings):
     redis_url: str | None = None
 
     required_permission: str = "seller.ai.product_content.generate"
+    ai_image_optimization_enabled: bool = True
+    ai_image_max_products_per_request: int = 10
+    ai_image_rate_limit_requests: int = 3
+    ai_image_rate_limit_window_seconds: int = 3600
+    ai_image_max_retry_attempts: int = 3
+    ai_image_review_retention_days: int = 30
+    ai_image_max_dimension: int = 2048
+    ai_image_webp_quality: int = 88
+    ai_image_worker_concurrency: int = 2
+    ai_image_provider_max_concurrency: int = 2
+    ai_image_outbox_poll_interval_ms: int = 250
+    ai_image_kafka_poll_timeout_ms: int = 250
+    ai_image_lifestyle_max_dimension: int = 1536
+    ai_image_lifestyle_jpeg_quality: int = 88
+    ai_image_background_encryption_key: SecretStr | None = None
+    database_url: str | None = None
+    kafka_bootstrap_servers: str = "localhost:29092"
+    kafka_image_optimization_topic: str = "ai.image-optimization.requested.v1"
+    kafka_image_optimization_dlq_topic: str = "ai.image-optimization.dlq.v1"
+    kafka_consumer_group: str = "ai-service.image-optimization-worker.v1"
+    media_service_url: str = "http://localhost:3004"
+    product_service_url: str = "http://localhost:3008"
+    internal_service_token: SecretStr | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

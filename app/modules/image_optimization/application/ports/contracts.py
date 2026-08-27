@@ -1,4 +1,4 @@
-"""Protocol cho persistence, Kafka, media va image providers de use case khong bi khoa."""
+"""Application ports cho persistence, messaging, service client và image providers."""
 
 from dataclasses import dataclass
 from datetime import datetime
@@ -6,7 +6,16 @@ from typing import Protocol
 from uuid import UUID
 
 from app.modules.image_optimization.domain.enums import ImageOptimizationStatus, LifestyleBackgroundPreset
-from app.modules.image_optimization.domain.models import GeneratedAsset, ImageOptimizationJob
+from app.modules.image_optimization.domain.models import GeneratedAsset, ImageOptimizationBatch, ImageOptimizationJob
+
+
+@dataclass(frozen=True)
+class ProviderExecutionMetadata:
+    """Metadata do adapter thực thi trả về để application không hard-code vendor/model."""
+
+    provider: str
+    model: str | None
+    prompt_version: str | None
 
 
 @dataclass(frozen=True)
@@ -16,6 +25,7 @@ class GeneratedImage:
     content: bytes
     content_type: str
     file_name: str
+    metadata: ProviderExecutionMetadata | None = None
 
 
 # Chỉ mang dữ liệu cần thiết vào provider ngay trước lời gọi trả phí; không ghi object này vào log, Kafka hay database.
@@ -32,6 +42,24 @@ class ImageOptimizationJobRepository(Protocol):
 
     async def save(self, job: ImageOptimizationJob) -> None:
         """Luu aggregate moi hoac ban cap nhat trang thai."""
+
+    async def save_batch(self, batch: ImageOptimizationBatch) -> ImageOptimizationBatch:
+        """Lưu batch identity và request hash trong cùng transaction với các job."""
+
+    async def find_batch(self, seller_owner_id: UUID, idempotency_key: str) -> ImageOptimizationBatch | None:
+        """Tìm batch bằng phép so sánh chính xác, không dùng prefix hoặc SQL wildcard."""
+
+    async def find_jobs_by_batch(self, batch_id: UUID) -> tuple[ImageOptimizationJob, ...]:
+        """Đọc các job thuộc batch theo batch ID nội bộ."""
+
+    async def claim_for_processing(
+        self,
+        job_id: UUID,
+        *,
+        worker_id: str,
+        lease_seconds: int,
+    ) -> ImageOptimizationJob | None:
+        """Claim job atomically để Kafka redelivery không gọi provider hai lần."""
 
     async def find_by_id(self, job_id: UUID, seller_owner_id: UUID | None = None) -> ImageOptimizationJob | None:
         """Doc job theo ID va tuy chon chan truy cap cheo seller."""
@@ -105,14 +133,22 @@ class LifestyleBackgroundProviderPort(Protocol):
 class ProductOwnerClient(Protocol):
     """Port xac minh ownership truoc khi tao job va apply output."""
 
-    async def assert_owned_and_get_updated_at(self, seller_owner_id: UUID, product_id: UUID) -> datetime:
+    async def assert_owned_and_get_updated_at(
+        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset()
+    ) -> datetime:
         """Xac minh san pham thuoc seller va tra version hien tai."""
 
-    async def get_cover_asset_id(self, seller_owner_id: UUID, product_id: UUID) -> UUID:
+    async def get_cover_asset_id(
+        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset()
+    ) -> UUID:
         """Lay asset ID anh dai dien da duoc Product Service xac minh ownership."""
 
     async def get_product_asset_ids(
-        self, seller_owner_id: UUID, product_id: UUID, requested_asset_ids: tuple[UUID, ...]
+        self,
+        seller_owner_id: UUID,
+        product_id: UUID,
+        requested_asset_ids: tuple[UUID, ...],
+        permissions: frozenset[str] = frozenset(),
     ) -> tuple[UUID, ...]:
         """Xac minh cac asset seller chon thuoc product va tra lai danh sach da chuan hoa."""
 
@@ -132,7 +168,14 @@ class ProductMediaClient(Protocol):
     ) -> None:
         """Apply output qua ownership va optimistic concurrency cua Product Service."""
 
-    async def rollback_media(self, *, seller_owner_id: UUID, product_id: UUID, job_id: UUID) -> None:
+    async def rollback_media(
+        self,
+        *,
+        seller_owner_id: UUID,
+        product_id: UUID,
+        job_id: UUID,
+        permissions: tuple[str, ...] = (),
+    ) -> None:
         """Khoi phuc snapshot anh goc do Product Service quan ly."""
 
 

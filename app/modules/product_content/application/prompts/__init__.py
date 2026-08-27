@@ -1,6 +1,6 @@
-"""Compatibility exports; prompt source of truth nằm trong application/prompts."""
+"""Công khai prompt builder product-content đã version hóa."""
 
-from app.modules.product_content.application.prompts import (
+from app.modules.product_content.application.prompts.product_content import (
     DESCRIPTION_PROMPT_VERSION,
     PROMPT_VERSION,
     Prompt,

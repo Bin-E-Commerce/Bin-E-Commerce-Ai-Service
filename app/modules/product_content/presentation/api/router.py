@@ -4,10 +4,10 @@ giúp mapping HTTP request/response sang command/result của application layer.
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Request, status
 
+from app.bootstrap.dependencies import get_current_user, get_product_description_service, get_product_name_service
 from app.core.config import Settings, get_settings
-from app.core.dependencies import get_current_user, get_product_description_service, get_product_name_service
 from app.core.errors import InvalidInputError
 from app.core.security import UserContext
 from app.modules.product_content.application.commands import (
@@ -15,11 +15,8 @@ from app.modules.product_content.application.commands import (
     ImageCommand,
     NameSuggestionCommand,
 )
-from app.modules.product_content.application.service import (
-    ProductDescriptionSuggestionService,
-    ProductNameSuggestionService,
-)
-from app.modules.product_content.presentation.schemas import (
+from app.modules.product_content.application.use_cases import GenerateProductDescription, GenerateProductNames
+from app.modules.product_content.presentation.api.schemas import (
     DescriptionSuggestionRequest,
     DescriptionSuggestionResponse,
     NameSuggestionRequest,
@@ -47,15 +44,16 @@ router = APIRouter(prefix="/api/v1/seller/product-content", tags=["seller-produc
 )
 async def suggest_product_names(
     payload: NameSuggestionRequest,
+    request: Request,
     user: Annotated[UserContext, Depends(get_current_user)],
-    service: Annotated[ProductNameSuggestionService, Depends(get_product_name_service)],
+    service: Annotated[GenerateProductNames, Depends(get_product_name_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> NameSuggestionResponse:
     """Kiểm tra CDN, chuyển schema thành command, gọi use case và map result an toàn ra JSON."""
 
     _validate_cdn_hosts(payload, settings)
     command = _to_command(payload)
-    request_id, result = await service.generate(command, user.user_id)
+    result = await service.execute(command, user.user_id)
     return NameSuggestionResponse(
         suggestions=[
             SuggestionResponse(
@@ -69,7 +67,7 @@ async def suggest_product_names(
         warnings=[
             WarningResponse(code=warning.code, field=warning.field, message=warning.message) for warning in result.warnings
         ],
-        request_id=request_id,
+        request_id=request.state.request_id,
     )
 
 
@@ -88,19 +86,20 @@ async def suggest_product_names(
 )
 async def suggest_product_description(
     payload: DescriptionSuggestionRequest,
+    request: Request,
     user: Annotated[UserContext, Depends(get_current_user)],
-    service: Annotated[ProductDescriptionSuggestionService, Depends(get_product_description_service)],
+    service: Annotated[GenerateProductDescription, Depends(get_product_description_service)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> DescriptionSuggestionResponse:
     """Validate CDN, gọi use case mô tả và map kết quả an toàn ra HTTP response."""
 
     _validate_cdn_hosts(payload, settings)
     command = _to_description_command(payload)
-    request_id, result = await service.generate(command, user.user_id)
+    result = await service.execute(command, user.user_id)
     return DescriptionSuggestionResponse(
         description=result.description,
         warnings=[WarningResponse(code=item.code, field=item.field, message=item.message) for item in result.warnings],
-        requestId=request_id,
+        requestId=request.state.request_id,
     )
 
 

@@ -20,6 +20,42 @@ class AuthorizationError(AppError):
     public_message = "The required AI permission is missing."
 
 
+# Phân biệt thiếu authentication với thiếu permission để Gateway/client không xử lý nhầm 401 và 403.
+class AuthenticationError(AppError):
+    """Identity nội bộ hoặc context xác thực không được upstream chấp nhận."""
+
+    status_code = 401
+    code = "UNAUTHORIZED"
+    public_message = "Authentication is required."
+
+
+# Trả 404 ổn định khi Product/Media Service xác nhận resource không tồn tại hoặc không còn khả dụng.
+class ResourceNotFoundError(AppError):
+    """Không làm lộ resource của seller khác; chỉ phản ánh resource hiện tại không dùng được."""
+
+    status_code = 404
+    code = "AI_RESOURCE_NOT_FOUND"
+    public_message = "The requested AI resource was not found."
+
+
+# Giữ conflict downstream, đặc biệt optimistic product version, thay vì biến mọi lỗi thành 503.
+class UpstreamConflictError(AppError):
+    """Downstream từ chối mutation do version hoặc idempotency conflict."""
+
+    status_code = 409
+    code = "AI_UPSTREAM_CONFLICT"
+    public_message = "The resource changed while the AI request was being processed."
+
+
+# Map request 4xx không thuộc auth/not-found/conflict sang lỗi client ổn định.
+class UpstreamRequestError(AppError):
+    """Payload đã qua AI Service nhưng downstream không thể chấp nhận theo contract hiện tại."""
+
+    status_code = 400
+    code = "AI_UPSTREAM_REQUEST_REJECTED"
+    public_message = "The downstream service rejected the AI request."
+
+
 # Lỗi này bảo vệ quota bằng cách dừng payload sai hoặc vượt giới hạn trước khi gọi provider.
 class InvalidInputError(AppError):
     """Request vi phạm giới hạn dữ liệu hoặc quy tắc đầu vào."""
@@ -79,3 +115,21 @@ class RateLimitExceededError(AppError):
     def __init__(self, retry_after_seconds: int) -> None:
         self.headers = {"Retry-After": str(retry_after_seconds)}
         super().__init__(self.public_message)
+
+
+# Báo conflict khi client dùng lại một idempotency key cho payload khác.
+class IdempotencyKeyReusedError(AppError):
+    """Ngăn trả nhầm batch cũ và ngăn tạo thêm lời gọi provider ngoài ý muốn."""
+
+    status_code = 409
+    code = "IDEMPOTENCY_KEY_REUSED"
+    public_message = "The idempotency key was already used for a different request."
+
+
+# Báo conflict khi output seller chọn không thuộc job hoặc job chưa thể apply.
+class OptimizationJobNotReadyError(AppError):
+    """Giữ error contract ổn định cho các lỗi lifecycle và output selection."""
+
+    status_code = 409
+    code = "AI_IMAGE_OPTIMIZATION_JOB_NOT_READY"
+    public_message = "The image optimization job is not ready to apply."

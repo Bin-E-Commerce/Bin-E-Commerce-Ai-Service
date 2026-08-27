@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     app_name: str = "ai-service"
     port: int = 3009
     node_env: Literal["development", "test", "production"] = "development"
+    ai_runtime_mode: Literal["memory", "service"] = "service"
 
     openai_api_key: SecretStr | None = None
     openai_model: str = "gpt-4.1-mini"
@@ -21,7 +22,12 @@ class Settings(BaseSettings):
     openai_timeout_seconds: float = 20.0
     openai_image_timeout_seconds: float = 120.0
     openai_image_quality: Literal["low", "medium", "high"] = "medium"
+    openai_image_output_hosts: str = "oaidalleapiprodscus.blob.core.windows.net,cdn.openai.com"
     llm_provider: str = "openai"
+    product_name_provider: Literal["openai"] = "openai"
+    product_description_provider: Literal["openai"] = "openai"
+    white_background_provider: Literal["rembg"] = "rembg"
+    lifestyle_background_provider: Literal["openai"] = "openai"
 
     ai_max_images: int = 3
     ai_max_text_chars: int = 6000
@@ -38,6 +44,7 @@ class Settings(BaseSettings):
     ai_image_rate_limit_requests: int = 3
     ai_image_rate_limit_window_seconds: int = 3600
     ai_image_max_retry_attempts: int = 3
+    ai_image_job_lease_seconds: int = 300
     ai_image_review_retention_days: int = 30
     ai_image_max_dimension: int = 2048
     ai_image_webp_quality: int = 88
@@ -45,8 +52,10 @@ class Settings(BaseSettings):
     ai_image_provider_max_concurrency: int = 2
     ai_image_outbox_poll_interval_ms: int = 250
     ai_image_kafka_poll_timeout_ms: int = 250
+    ai_image_outbox_max_attempts: int = 8
     ai_image_lifestyle_max_dimension: int = 1536
     ai_image_lifestyle_jpeg_quality: int = 88
+    ai_image_generated_max_bytes: int = 20_000_000
     ai_image_background_encryption_key: SecretStr | None = None
     database_url: str | None = None
     kafka_bootstrap_servers: str = "localhost:29092"

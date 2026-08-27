@@ -6,7 +6,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
-from app.core.dependencies import (
+from app.bootstrap.dependencies import (
     get_image_apply_user,
     get_image_generate_user,
     get_image_optimization_service,
@@ -17,7 +17,7 @@ from app.core.security import UserContext
 from app.modules.image_optimization.application.commands import CreateOptimizationJobsCommand
 from app.modules.image_optimization.application.service import ImageOptimizationApplicationService
 from app.modules.image_optimization.domain.errors import InvalidJobTransitionError
-from app.modules.image_optimization.presentation.schemas import (
+from app.modules.image_optimization.presentation.api.schemas import (
     ApplyImageOptimizationRequest,
     CreateImageOptimizationRequest,
     CreateImageOptimizationResponse,
@@ -43,7 +43,14 @@ def _to_job_response(job: object) -> OptimizationJobResponse:
         background_preset=job.background_preset,
         generated_asset_ids=list(job.generated_asset_ids),
         generated_assets=[
-            {"assetId": str(asset.asset_id), "imageUrl": asset.public_url, "mode": asset.mode} for asset in job.generated_assets
+            {
+                "assetId": str(asset.asset_id),
+                "imageUrl": asset.public_url,
+                "mode": asset.mode,
+                "outputId": str(asset.output_id),
+                "sourceAssetId": str(asset.source_asset_id) if asset.source_asset_id else None,
+            }
+            for asset in job.generated_assets
         ],
         created_at=job.created_at,
         failure_code=job.failure_code,
@@ -81,6 +88,7 @@ async def create_image_optimization_jobs(
         background_preset=payload.background.preset if payload.background else None,
         background_description=payload.background.description if payload.background else None,
         force_regenerate=payload.force_regenerate,
+        permissions=user.permissions,
     )
     batch_id, jobs = await service.create_jobs(command)
     return CreateImageOptimizationResponse(batch_id=batch_id, jobs=[_to_job_response(job) for job in jobs])
@@ -135,24 +143,15 @@ async def apply_image_optimization_job(
     user: Annotated[UserContext, Depends(get_image_apply_user)],
     service: Annotated[ImageOptimizationApplicationService, Depends(get_image_optimization_service)],
 ) -> OptimizationJobResponse:
-    """Chi cho apply job da co output; Product Service integration se duoc goi trong production wiring."""
+    """Map selection sang asset IDs; use case tự kiểm tra owner, version và lifecycle."""
 
-    job = await service.get_job(job_id, UUID(user.user_id))
-    if job is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Optimization job not found")
-    if not job.generated_asset_ids and not job.generated_assets:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Optimization output is not ready")
-    if job.expected_product_updated_at is None or payload.expected_product_updated_at != job.expected_product_updated_at:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Product changed while AI was processing. Create a new optimization request.",
-        )
-    try:
-        updated = await service.apply_job(job_id, UUID(user.user_id))
-    except InvalidJobTransitionError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Optimization job is not ready to apply") from error
-    except ValueError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Optimization job is not ready") from error
+    updated = await service.apply_job(
+        job_id,
+        UUID(user.user_id),
+        expected_product_updated_at=payload.expected_product_updated_at,
+        selected_asset_ids=tuple(image.asset_id for image in payload.images),
+        permissions=user.permissions,
+    )
     return _to_job_response(updated)
 
 
@@ -165,7 +164,7 @@ async def rollback_image_optimization_job(
     """Danh dau rollback sau khi Product Service khoi phuc snapshot anh goc."""
 
     try:
-        job = await service.rollback_job(job_id, UUID(user.user_id))
+        job = await service.rollback_job(job_id, UUID(user.user_id), user.permissions)
     except LookupError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Optimization job not found") from error
     except InvalidJobTransitionError as error:

@@ -1,4 +1,4 @@
-"""Pydantic request/response schemas, chi validate shape tai HTTP boundary."""
+"""Pydantic request/response schemas, chỉ validate shape tại HTTP boundary."""
 
 from datetime import datetime
 from enum import StrEnum
@@ -91,6 +91,15 @@ class OptimizationJobResponse(BaseModel):
     failure_code: str | None = Field(default=None, alias="failureCode")
 
 
+# Mô tả output seller chọn bằng asset ID; URL do browser gửi không được tin cậy.
+class ApplyImageSelection(BaseModel):
+    """Giữ tương thích với payload hiện tại nhưng chỉ assetId được dùng để đối chiếu."""
+
+    model_config = ConfigDict(extra="ignore", populate_by_name=True)
+
+    asset_id: UUID = Field(alias="assetId")
+
+
 class CreateImageOptimizationResponse(BaseModel):
     """Response 202 cho batch tao job."""
 
@@ -118,4 +127,4 @@ class ApplyImageOptimizationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
     expected_product_updated_at: datetime = Field(alias="expectedProductUpdatedAt")
-    images: list[dict[str, str]] = Field(default_factory=list, max_length=9)
+    images: list[ApplyImageSelection] = Field(default_factory=list, max_length=9)

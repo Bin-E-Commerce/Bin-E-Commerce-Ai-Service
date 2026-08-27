@@ -1,4 +1,8 @@
-"""Tạo dependency FastAPI cho config, bảo mật, cache, rate limit và application service."""
+"""FastAPI dependency wiring cho application use cases và infrastructure adapters.
+
+Business module không tự đọc settings hoặc khởi tạo HTTP/database client. Memory
+fallback chỉ được dùng khi lifespan đã xác nhận runtime mode `memory`.
+"""
 
 from collections.abc import AsyncIterator
 from typing import Annotated
@@ -19,74 +23,75 @@ from app.modules.image_optimization.infrastructure.persistence.sqlalchemy_reposi
     SqlAlchemyImageOptimizationJobRepository,
 )
 from app.modules.image_optimization.infrastructure.security import FernetBackgroundDescriptionCipher
-from app.modules.product_content.application.service import (
-    ProductDescriptionSuggestionService,
-    ProductNameSuggestionService,
-)
-from app.modules.product_content.infrastructure.provider_factory import build_llm_provider
+from app.modules.product_content.application.use_cases import GenerateProductDescription, GenerateProductNames
 
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
 
 
+# Xác thực permission view trước khi đọc job/overview của seller.
 def get_image_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
-    """Kiem tra permission rieng cua image optimization truoc khi tao job tieu quota."""
+    """Chặn feature disabled và context thiếu quyền ở HTTP boundary."""
 
     if not settings.ai_image_optimization_enabled:
         raise ConfigurationError()
     return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.view")
 
 
+# Xác thực permission generate trước khi request có thể tiêu quota hoặc tạo outbox.
 def get_image_generate_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
-    """Kiem tra permission generate rieng de route tao job khong chi dua vao quyen view."""
+    """Trả immutable UserContext đã parse permission một lần."""
 
     if not settings.ai_image_optimization_enabled:
         raise ConfigurationError()
     return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.generate")
 
 
+# Xác thực permission apply trước khi Product Service mutation được gọi.
 def get_image_apply_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
-    """Kiem tra quyen apply output AI truoc khi goi Product Service thay doi media."""
+    """Giữ nguyên toàn bộ permission đã xác thực để downstream không phải tự tạo policy."""
 
     return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.apply")
 
 
+# Xác thực quyền rollback riêng với quyền apply.
 def get_image_rollback_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
-    """Kiem tra quyen rollback tach rieng de tranh seller chi co view tu y khoi phuc media."""
+    """Không cho user chỉ có view tự khôi phục media sản phẩm."""
 
     return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.rollback")
 
 
+# Wiring facade từ từng adapter theo đúng runtime mode đã được lifespan kiểm tra.
 async def get_image_optimization_service(request: Request) -> AsyncIterator[ImageOptimizationApplicationService]:
-    """Tao service theo request; production dung PostgreSQL+outbox, local fallback memory de dev nhanh."""
+    """Production dùng PostgreSQL/outbox/shared HTTP; memory mode dùng explicit in-process adapters."""
 
     settings = get_settings()
-    internal_token_configured = bool(settings.internal_service_token and settings.internal_service_token.get_secret_value())
-    owner_client = HttpProductOwnerClient(settings) if internal_token_configured else None
-    product_media_client = HttpProductMediaClient(settings) if internal_token_configured else None
-    media_asset_client = HttpMediaAssetClient(settings) if internal_token_configured else None
-    # Chỉ khởi tạo cipher khi có key; request không dùng mô tả tùy chỉnh vẫn chạy được ở local không có secret.
+    memory_mode = request.app.state.ai_runtime_mode == "memory"
+    shared_http_client = request.app.state.http_client
+    owner_client = None if memory_mode else HttpProductOwnerClient(settings, shared_http_client)
+    product_media_client = None if memory_mode else HttpProductMediaClient(settings, shared_http_client)
+    media_asset_client = None if memory_mode else HttpMediaAssetClient(settings, shared_http_client)
     cipher_secret = (
         settings.ai_image_background_encryption_key.get_secret_value() if settings.ai_image_background_encryption_key else None
     )
     background_cipher = FernetBackgroundDescriptionCipher(cipher_secret) if cipher_secret else None
-    session_factory = getattr(request.app.state, "image_session_factory", None)
-    if session_factory is None:
+
+    if memory_mode:
         yield ImageOptimizationApplicationService(
             repository=request.app.state.image_optimization_repository,
             publisher=request.app.state.image_optimization_publisher,
@@ -97,11 +102,13 @@ async def get_image_optimization_service(request: Request) -> AsyncIterator[Imag
             rate_limit_requests=settings.ai_image_rate_limit_requests,
             rate_limit_window_seconds=settings.ai_image_rate_limit_window_seconds,
             background_cipher=background_cipher,
+            allow_memory_adapters=True,
         )
         return
 
-    async with session_factory() as session:
-        service = ImageOptimizationApplicationService(
+    session_factory = request.app.state.image_session_factory
+    async with session_factory() as session, session.begin():
+        yield ImageOptimizationApplicationService(
             repository=SqlAlchemyImageOptimizationJobRepository(session),
             publisher=SqlAlchemyOptimizationOutboxPublisher(session),
             owner_client=owner_client,
@@ -111,53 +118,39 @@ async def get_image_optimization_service(request: Request) -> AsyncIterator[Imag
             rate_limit_requests=settings.ai_image_rate_limit_requests,
             rate_limit_window_seconds=settings.ai_image_rate_limit_window_seconds,
             background_cipher=background_cipher,
+            allow_memory_adapters=False,
         )
-        try:
-            yield service
-            await session.commit()
-        except Exception:
-            await session.rollback()
-            raise
 
 
-# Đọc header do Gateway forward và chặn request trước khi khởi tạo provider trả phí.
+# Đọc identity/permission do Gateway chuyển tiếp cho product-content endpoints.
 def get_current_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
-    """Đọc context do Gateway forward và chặn request không có permission."""
+    """Chặn request thiếu quyền trước khi khởi tạo provider trả phí."""
 
     return build_user_context(x_user_id, x_user_permissions, settings.required_permission)
 
 
-# Lắp provider qua factory để thay OpenAI bằng LLM khác mà route và use case không đổi.
-def get_product_name_service(
-    request: Request,
-    settings: SettingsDependency,
-) -> ProductNameSuggestionService:
-    """Wiring provider qua interface để thay OpenAI bằng LLM khác không đổi route."""
+# Wiring use case gợi ý tên với cache/rate limiter đã được lifespan chọn.
+def get_product_name_service(request: Request, settings: SettingsDependency) -> GenerateProductNames:
+    """Provider registry được tạo ở composition root, không trong router/use case."""
 
-    cache = request.app.state.result_cache
-    rate_limiter = request.app.state.rate_limiter
-    provider = build_llm_provider(settings)
-    return ProductNameSuggestionService(
-        provider=provider,
-        cache=cache,
-        rate_limiter=rate_limiter,
+    return GenerateProductNames(
+        provider=request.app.state.product_name_provider,
+        cache=request.app.state.result_cache,
+        rate_limiter=request.app.state.rate_limiter,
         settings=settings,
     )
 
 
-# Wiring use case mô tả qua cùng provider/cache/quota; route không cần biết adapter OpenAI cụ thể.
-def get_product_description_service(
-    request: Request,
-    settings: SettingsDependency,
-) -> ProductDescriptionSuggestionService:
-    """Tạo application service mô tả với các dependency dùng chung theo process."""
+# Wiring use case mô tả với cùng shared cache/quota nhưng capability độc lập.
+def get_product_description_service(request: Request, settings: SettingsDependency) -> GenerateProductDescription:
+    """Không tạo mutable global provider client khi import module."""
 
-    return ProductDescriptionSuggestionService(
-        provider=build_llm_provider(settings),
+    return GenerateProductDescription(
+        provider=request.app.state.product_description_provider,
         cache=request.app.state.result_cache,
         rate_limiter=request.app.state.rate_limiter,
         settings=settings,

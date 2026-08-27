@@ -6,7 +6,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from app.core.dependencies import get_image_optimization_service
+from app.bootstrap.dependencies import get_image_optimization_service
 from app.main import create_app
 from app.modules.image_optimization.domain.enums import ImageOptimizationMode, ImageOptimizationStatus
 from app.modules.image_optimization.domain.models import ImageOptimizationJob

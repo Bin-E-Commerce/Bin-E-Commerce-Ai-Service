@@ -3,8 +3,8 @@
 import httpx
 import pytest
 
+from app.bootstrap.dependencies import get_product_name_service
 from app.core.config import Settings, get_settings
-from app.core.dependencies import get_product_name_service
 from app.main import create_app
 from app.modules.product_content.domain.models import DescriptionBatch, GeneratedName, SuggestionBatch
 
@@ -12,33 +12,27 @@ from app.modules.product_content.domain.models import DescriptionBatch, Generate
 # Fake service cô lập route khỏi OpenAI để test không gửi request trả phí.
 class FakeService:
     # Trả batch hợp lệ để kiểm tra mapping domain model sang JSON alias camelCase.
-    async def generate(self, command, user_id):
-        return (
-            "request-1",
-            SuggestionBatch(
-                suggestions=(
-                    GeneratedName("Premium Vietnamese leather shoes for office", "Clear category.", True),
-                    GeneratedName("Comfortable leather shoes for daily business outfits", "Useful context.", False),
-                    GeneratedName("Elegant men's leather shoes with soft sole", "Natural wording.", False),
-                ),
-                warnings=(),
+    async def execute(self, command, user_id):
+        return SuggestionBatch(
+            suggestions=(
+                GeneratedName("Premium Vietnamese leather shoes for office", "Clear category.", True),
+                GeneratedName("Comfortable leather shoes for daily business outfits", "Useful context.", False),
+                GeneratedName("Elegant men's leather shoes with soft sole", "Natural wording.", False),
             ),
+            warnings=(),
         )
 
 
 # Fake use case mô tả để kiểm tra route mapping mà không khởi tạo OpenAI client thật.
 class FakeDescriptionService:
     # Trả mô tả có cấu trúc và requestId cố định để assertion không phụ thuộc random UUID.
-    async def generate(self, command, user_id):
-        return (
-            "description-request-1",
-            DescriptionBatch(
-                description=(
-                    "Điểm nổi bật:\n- Chất liệu da\n- Thiết kế êm chân\n\n"
-                    "Mô tả chi tiết:\nSản phẩm phù hợp cho nhu cầu sử dụng hằng ngày của người dùng."
-                ),
-                warnings=(),
+    async def execute(self, command, user_id):
+        return DescriptionBatch(
+            description=(
+                "Điểm nổi bật:\n- Chất liệu da\n- Thiết kế êm chân\n\n"
+                "Mô tả chi tiết:\nSản phẩm phù hợp cho nhu cầu sử dụng hằng ngày của người dùng."
             ),
+            warnings=(),
         )
 
 
@@ -88,6 +82,7 @@ async def test_route_returns_structured_suggestions() -> None:
                 headers={
                     "x-user-id": "seller-1",
                     "x-user-permissions": "seller.ai.product_content.generate",
+                    "x-request-id": "request-1",
                 },
             )
     finally:
@@ -104,7 +99,7 @@ async def test_route_returns_structured_suggestions() -> None:
 # Permission hợp lệ phải map mô tả và requestId đúng contract public của endpoint mới.
 async def test_description_route_returns_single_description() -> None:
     application = create_app()
-    from app.core.dependencies import get_product_description_service
+    from app.bootstrap.dependencies import get_product_description_service
 
     application.dependency_overrides[get_product_description_service] = lambda: FakeDescriptionService()
     application.dependency_overrides[get_settings] = lambda: Settings(media_public_cdn_url="https://cdn.example.com")
@@ -117,6 +112,7 @@ async def test_description_route_returns_single_description() -> None:
                 headers={
                     "x-user-id": "seller-1",
                     "x-user-permissions": "seller.ai.product_content.generate",
+                    "x-request-id": "description-request-1",
                 },
             )
     finally:

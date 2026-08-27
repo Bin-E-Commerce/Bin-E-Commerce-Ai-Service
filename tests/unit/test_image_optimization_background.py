@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 from pydantic import ValidationError
 
-from app.modules.image_optimization.presentation.schemas import CreateImageOptimizationRequest
+from app.modules.image_optimization.presentation.api.schemas import CreateImageOptimizationRequest
 
 
 # Tạo payload lifestyle hợp lệ để từng test chỉ thay đổi một rule nghiệp vụ.

@@ -9,10 +9,7 @@ from app.modules.product_content.application.commands import (
     ImageCommand,
     NameSuggestionCommand,
 )
-from app.modules.product_content.application.service import (
-    ProductDescriptionSuggestionService,
-    ProductNameSuggestionService,
-)
+from app.modules.product_content.application.use_cases import GenerateProductDescription, GenerateProductNames
 from app.modules.product_content.domain.models import GeneratedName
 from app.modules.product_content.infrastructure.memory_cache import MemoryResultCache
 from app.modules.product_content.infrastructure.memory_rate_limiter import MemoryRateLimiter
@@ -41,6 +38,24 @@ class FakeProvider:
         )
 
 
+# Rate limiter fake đếm số lần để chứng minh cache hit không tiêu quota lần hai.
+class CountingRateLimiter:
+    """Không chặn request; chỉ ghi số lần use case thật sự kiểm tra quota."""
+
+    # Khởi tạo counter trước lần execute đầu.
+    def __init__(self) -> None:
+        """Counter bắt đầu từ zero."""
+
+        self.calls = 0
+
+    # Tăng counter và bỏ các tham số không cần cho assertion.
+    async def check(self, key: str, limit: int, window_seconds: int) -> None:
+        """Mô phỏng adapter quota thành công."""
+
+        del key, limit, window_seconds
+        self.calls += 1
+
+
 # Tạo command ổn định để các test tập trung vào từng behavior của application service.
 def command() -> NameSuggestionCommand:
     return NameSuggestionCommand(
@@ -60,13 +75,20 @@ def command() -> NameSuggestionCommand:
 # Hai lần gọi cùng input phải cho cùng batch và lần hai lấy từ cache.
 async def test_service_returns_three_suggestions_and_caches_result() -> None:
     provider = FakeProvider()
-    service = ProductNameSuggestionService(provider, MemoryResultCache(), MemoryRateLimiter(), Settings())
+    rate_limiter = CountingRateLimiter()
+    service = GenerateProductNames(
+        provider,
+        MemoryResultCache(),
+        rate_limiter,
+        Settings(media_public_cdn_url="https://cdn.example.com"),
+    )
 
-    _, first = await service.generate(command(), "seller-1")
-    _, second = await service.generate(command(), "seller-1")
+    first = await service.execute(command(), "seller-1")
+    second = await service.execute(command(), "seller-1")
 
     assert len(first.suggestions) == 3
     assert first == second
+    assert rate_limiter.calls == 1
 
 
 # Provider lỗi dùng để chứng minh service không chấp nhận output thiếu candidate.
@@ -79,10 +101,15 @@ class InvalidProvider:
 @pytest.mark.asyncio
 # Output sai schema phải bị chặn trước khi trả response hoặc ghi cache.
 async def test_service_rejects_invalid_provider_shape() -> None:
-    service = ProductNameSuggestionService(InvalidProvider(), MemoryResultCache(), MemoryRateLimiter(), Settings())
+    service = GenerateProductNames(
+        InvalidProvider(),
+        MemoryResultCache(),
+        MemoryRateLimiter(),
+        Settings(media_public_cdn_url="https://cdn.example.com"),
+    )
 
     with pytest.raises(InvalidProviderResponseError):
-        await service.generate(command(), "seller-1")
+        await service.execute(command(), "seller-1")
 
 
 # Fake provider mô phỏng nội dung đủ dài nhưng chứa URL để kiểm tra lớp safety sau provider.
@@ -110,10 +137,15 @@ def description_command() -> DescriptionSuggestionCommand:
 # Hai lần gọi mô tả cùng input phải dùng batch đã sanitize trong cache và không gọi provider lần hai.
 async def test_description_service_sanitizes_and_caches_result() -> None:
     provider = DescriptionProvider()
-    service = ProductDescriptionSuggestionService(provider, MemoryResultCache(), MemoryRateLimiter(), Settings())
+    service = GenerateProductDescription(
+        provider,
+        MemoryResultCache(),
+        MemoryRateLimiter(),
+        Settings(media_public_cdn_url="https://cdn.example.com"),
+    )
 
-    _, first = await service.generate(description_command(), "seller-description")
-    _, second = await service.generate(description_command(), "seller-description")
+    first = await service.execute(description_command(), "seller-description")
+    second = await service.execute(description_command(), "seller-description")
 
     assert "https://" not in first.description
     assert len(first.description) >= 100

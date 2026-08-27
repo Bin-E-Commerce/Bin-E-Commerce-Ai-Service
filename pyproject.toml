@@ -21,6 +21,7 @@ dependencies = [
   "Pillow>=11.0,<12.0",
   "rembg>=2.0.67,<3.0",
   "onnxruntime>=1.18,<2.0",
+  "alembic>=1.14,<2.0",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +31,8 @@ dev = [
   "pytest>=8.3,<9.0",
   "pytest-asyncio>=0.24,<1.0",
   "ruff>=0.8,<1.0",
+  "pytest-cov>=6.0,<7.0",
+  "import-linter>=2.1,<3.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -59,3 +62,30 @@ init_forbid_extra = true
 init_typed = true
 warn_required_dynamic_aliases = true
 warn_untyped_fields = true
+
+[tool.coverage.run]
+branch = true
+source = ["app"]
+
+[tool.coverage.report]
+fail_under = 80
+show_missing = true
+
+[tool.importlinter]
+root_packages = ["app"]
+include_external_packages = true
+
+[[tool.importlinter.contracts]]
+name = "Domain layers stay framework independent"
+type = "forbidden"
+source_modules = [
+  "app.modules.image_optimization.domain",
+  "app.modules.product_content.domain",
+]
+forbidden_modules = ["fastapi", "pydantic", "sqlalchemy", "httpx", "openai", "aiokafka", "redis"]
+
+[[tool.importlinter.contracts]]
+name = "Core does not import business modules"
+type = "forbidden"
+source_modules = ["app.core"]
+forbidden_modules = ["app.modules"]

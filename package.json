@@ -4,14 +4,20 @@
   "private": true,
   "description": "Python FastAPI AI service for Bin E-Commerce seller and customer workflows",
   "scripts": {
-    "dev": "python -m uvicorn app.main:app --reload --host 127.0.0.1 --port 3009",
-    "worker": "python -m app.workers.image_optimization_worker",
-    "start": "python -m uvicorn app.main:app --host 0.0.0.0 --port 3009",
-    "test": "python -m pytest -q",
-    "lint": "python -m ruff check app tests",
-    "format": "python -m ruff format app tests",
-    "format:check": "python -m ruff format --check app tests",
+    "dev": "python -m uvicorn app.entrypoints.api:app --reload --host 127.0.0.1 --port 3009",
+    "worker": "python -m app.entrypoints.image_optimization_worker",
+    "outbox": "python -m app.entrypoints.outbox_relay",
+    "start": "python -m uvicorn app.entrypoints.api:app --host 0.0.0.0 --port 3009",
+    "test": "python -m pytest --cov=app --cov-report=term-missing -q",
+    "test:fast": "python -m pytest -q",
+    "lint": "python -m ruff check app tests migrations",
+    "format": "python -m ruff format app tests migrations",
+    "format:check": "python -m ruff format --check app tests migrations",
     "type-check": "python -m mypy app",
-    "check": "npm run lint && npm run format:check && npm run type-check && npm run test"
+    "architecture:check": "lint-imports --config pyproject.toml",
+    "utf8:check": "python scripts/check_utf8.py",
+    "compile:check": "python -m compileall -q app",
+    "migration:sql": "alembic upgrade head --sql",
+    "check": "npm run lint && npm run format:check && npm run type-check && npm run architecture:check && npm run utf8:check && npm run compile:check && npm run test"
   }
 }

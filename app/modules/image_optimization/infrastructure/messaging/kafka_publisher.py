@@ -1,10 +1,10 @@
 """Kafka publisher cho event image optimization, chi gui metadata va khong gui binary."""
 
 import json
-from datetime import UTC, datetime
 from typing import Any
 
 from app.core.config import Settings
+from app.modules.image_optimization.application.events import ImageOptimizationRequestedEvent
 from app.modules.image_optimization.domain.models import ImageOptimizationJob
 
 
@@ -34,17 +34,7 @@ class KafkaOptimizationEventPublisher:
 
         if self._producer is None:
             raise RuntimeError("Kafka producer has not been started")
-        payload = {
-            "eventId": str(job.job_id),
-            "eventType": "ai.image-optimization.requested",
-            "schemaVersion": 1,
-            "jobId": str(job.job_id),
-            "productId": str(job.product_id),
-            "sellerOwnerId": str(job.seller_owner_id),
-            "sourceAssetIds": [str(asset_id) for asset_id in job.source_asset_ids],
-            "modes": [mode.value for mode in job.requested_modes],
-            "occurredAt": datetime.now(UTC).isoformat(),
-        }
+        payload = ImageOptimizationRequestedEvent.from_job(job).to_payload()
         await self._producer.send_and_wait(
             self._settings.kafka_image_optimization_topic,
             json.dumps(payload).encode("utf-8"),

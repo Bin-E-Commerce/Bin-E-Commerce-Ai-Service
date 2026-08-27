@@ -2,15 +2,22 @@
 
 from app.core.config import Settings
 from app.core.errors import ConfigurationError
-from app.modules.product_content.domain.ports import LLMProductContentProvider
+from app.modules.product_content.application.ports import ProductDescriptionProvider, ProductNameProvider
 from app.modules.product_content.infrastructure.openai_provider import OpenAINameSuggestionProvider
 
 
-# Đọc LLM_PROVIDER để sau này thêm Anthropic/Gemini/local model mà không sửa use case.
-def build_llm_provider(settings: Settings) -> LLMProductContentProvider:
-    """Chọn adapter bằng config để thêm LLM mới mà không sửa use case hoặc route."""
+# Tạo registry capability một lần ở lifespan; vendor branching không xuất hiện trong route/use case.
+def build_product_content_providers(settings: Settings) -> tuple[ProductNameProvider, ProductDescriptionProvider]:
+    """Trả provider theo từng capability và fail-fast với cấu hình chưa được hỗ trợ."""
 
-    provider_name = settings.llm_provider.strip().lower()
-    if provider_name == "openai":
-        return OpenAINameSuggestionProvider(settings)
-    raise ConfigurationError()
+    if settings.product_name_provider != "openai" or settings.product_description_provider != "openai":
+        raise ConfigurationError()
+    openai_provider = OpenAINameSuggestionProvider(settings)
+    return openai_provider, openai_provider
+
+
+# Alias tạm cho integration cũ; code bootstrap mới dùng registry capability ở trên.
+def build_llm_provider(settings: Settings) -> ProductNameProvider | ProductDescriptionProvider:
+    """Giữ import cũ một release mà không thay đổi provider selection semantics."""
+
+    return build_product_content_providers(settings)[0]

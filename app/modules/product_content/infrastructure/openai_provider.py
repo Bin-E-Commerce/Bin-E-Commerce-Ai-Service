@@ -12,8 +12,8 @@ from app.core.errors import (
     InvalidProviderResponseError,
     ProviderUnavailableError,
 )
+from app.modules.product_content.application.prompts import build_description_prompt, build_prompt
 from app.modules.product_content.domain.models import GeneratedName, ProductContext
-from app.modules.product_content.infrastructure.prompt_builder import build_description_prompt, build_prompt
 
 
 # Schema nội bộ buộc model trả title/reason đúng giới hạn trước khi chuyển sang domain.

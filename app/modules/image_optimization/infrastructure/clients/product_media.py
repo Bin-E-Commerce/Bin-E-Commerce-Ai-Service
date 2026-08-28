@@ -36,16 +36,25 @@ class HttpProductMediaClient:
         expected_product_updated_at: datetime | None,
         assets: tuple[GeneratedAsset, ...],
         permissions: tuple[str, ...] = (),
+        seller_email: str = "",
     ) -> None:
         """Job ID là idempotency identity cho downstream retry sau partial failure."""
 
         if expected_product_updated_at is None:
             raise ValueError("Expected product version is required")
+        # Product Service can mapping va thay the dung anh goc; output legacy thieu mapping phai fail an toan.
+        if any(asset.source_asset_id is None for asset in assets):
+            raise ValueError("Generated output source mapping is required")
         payload = {
             "jobId": str(job_id),
             "expectedProductUpdatedAt": expected_product_updated_at.isoformat(),
             "images": [
-                {"assetId": str(asset.asset_id), "imageUrl": asset.public_url, "sortOrder": index}
+                {
+                    "assetId": str(asset.asset_id),
+                    "sourceAssetId": str(asset.source_asset_id),
+                    "imageUrl": asset.public_url,
+                    "sortOrder": index,
+                }
                 for index, asset in enumerate(assets)
                 if asset.public_url
             ],
@@ -56,7 +65,7 @@ class HttpProductMediaClient:
                 f"{self._base_url}/api/v1/seller/products/{product_id}/ai-media/apply",
                 timeout=15,
                 json=payload,
-                headers=self._http.headers(seller_owner_id, frozenset(permissions)),
+                headers=self._http.headers(seller_owner_id, frozenset(permissions), seller_email),
             )
             self._http.ensure_success(response)
         except (httpx.HTTPError, TimeoutError) as error:
@@ -70,6 +79,7 @@ class HttpProductMediaClient:
         product_id: UUID,
         job_id: UUID,
         permissions: tuple[str, ...] = (),
+        seller_email: str = "",
     ) -> None:
         """Không synthesize permission; service token và ownership vẫn được downstream kiểm tra."""
 
@@ -79,7 +89,7 @@ class HttpProductMediaClient:
                 f"{self._base_url}/api/v1/seller/products/{product_id}/ai-media/rollback",
                 timeout=15,
                 json={"jobId": str(job_id)},
-                headers=self._http.headers(seller_owner_id, frozenset(permissions)),
+                headers=self._http.headers(seller_owner_id, frozenset(permissions), seller_email),
             )
             self._http.ensure_success(response)
         except (httpx.HTTPError, TimeoutError) as error:

@@ -9,6 +9,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from app.modules.image_optimization.domain.enums import (
+    ImageGenerationProfile,
     ImageOptimizationMode,
     ImageOptimizationProcessingStage,
     ImageOptimizationStatus,
@@ -70,8 +71,14 @@ ALLOWED_TRANSITIONS: dict[ImageOptimizationStatus, frozenset[ImageOptimizationSt
     ImageOptimizationStatus.PENDING: frozenset({ImageOptimizationStatus.PROCESSING, ImageOptimizationStatus.FAILED}),
     ImageOptimizationStatus.PROCESSING: frozenset({ImageOptimizationStatus.REVIEW_REQUIRED, ImageOptimizationStatus.FAILED}),
     ImageOptimizationStatus.REVIEW_REQUIRED: frozenset(
-        {ImageOptimizationStatus.APPLIED, ImageOptimizationStatus.REJECTED, ImageOptimizationStatus.FAILED}
+        {
+            ImageOptimizationStatus.APPLIED,
+            ImageOptimizationStatus.REJECTED,
+            ImageOptimizationStatus.FAILED,
+            ImageOptimizationStatus.FINALIZING,
+        }
     ),
+    ImageOptimizationStatus.FINALIZING: frozenset({ImageOptimizationStatus.PROCESSING, ImageOptimizationStatus.FAILED}),
     # SUCCEEDED chỉ được giữ để đọc dữ liệu cũ; domain mới không tạo trạng thái này.
     ImageOptimizationStatus.SUCCEEDED: frozenset({ImageOptimizationStatus.APPLIED, ImageOptimizationStatus.REJECTED}),
     ImageOptimizationStatus.APPLIED: frozenset({ImageOptimizationStatus.ROLLED_BACK}),
@@ -98,6 +105,8 @@ class ImageOptimizationJob:
     background_preset: LifestyleBackgroundPreset | None = None
     background_description_ciphertext: str | None = None
     background_description_hash: str | None = None
+    generation_profile: ImageGenerationProfile = ImageGenerationProfile.PREVIEW
+    selected_output_asset_ids: tuple[UUID, ...] = ()
     status: ImageOptimizationStatus = ImageOptimizationStatus.PENDING
     processing_stage: ImageOptimizationProcessingStage = ImageOptimizationProcessingStage.QUEUED
     generated_asset_ids: tuple[UUID, ...] = ()
@@ -131,6 +140,7 @@ class ImageOptimizationJob:
         background_preset: LifestyleBackgroundPreset | None = None,
         background_description_ciphertext: str | None = None,
         background_description_hash: str | None = None,
+        generation_profile: ImageGenerationProfile = ImageGenerationProfile.PREVIEW,
     ) -> "ImageOptimizationJob":
         """Chặn source/mode rỗng và giữ identity client tách khỏi job ID nội bộ."""
 
@@ -153,6 +163,32 @@ class ImageOptimizationJob:
             background_preset=background_preset,
             background_description_ciphertext=background_description_ciphertext,
             background_description_hash=background_description_hash,
+            generation_profile=generation_profile,
+        )
+
+    # Ghi nhận lựa chọn seller và chuyển job sang pipeline medium trước khi áp dụng sản phẩm.
+    def request_finalization(self, asset_ids: tuple[UUID, ...]) -> "ImageOptimizationJob":
+        """Chỉ cho phép finalization từ kết quả preview đã sẵn sàng để tránh gọi provider trùng."""
+
+        if self.status not in {ImageOptimizationStatus.REVIEW_REQUIRED, ImageOptimizationStatus.SUCCEEDED}:
+            raise InvalidJobTransitionError("Image optimization job is not ready for finalization")
+        selected = self.select_outputs(asset_ids)
+        if not selected:
+            raise InvalidOutputSelectionError("At least one output is required for finalization")
+        selected_source_asset_ids = tuple(
+            dict.fromkeys(asset.source_asset_id for asset in selected if asset.source_asset_id is not None)
+        )
+        if not selected_source_asset_ids:
+            raise InvalidOutputSelectionError("Selected outputs have no source mapping")
+        return replace(
+            self,
+            # Finalization chỉ xử lý đúng các ảnh seller đã duyệt, không chạy lại toàn bộ ảnh của sản phẩm.
+            source_asset_ids=selected_source_asset_ids,
+            status=ImageOptimizationStatus.FINALIZING,
+            processing_stage=ImageOptimizationProcessingStage.QUEUED,
+            generation_profile=ImageGenerationProfile.FINAL,
+            selected_output_asset_ids=tuple(asset.asset_id for asset in selected),
+            version=self.version + 1,
         )
 
     # Cập nhật stage để frontend theo dõi tiến trình nhưng không thay đổi trạng thái nghiệp vụ.
@@ -201,6 +237,8 @@ class ImageOptimizationJob:
             ImageOptimizationStatus.PENDING,
             ImageOptimizationStatus.FAILED,
             ImageOptimizationStatus.PROCESSING,
+            # FINALIZING là một lần chạy worker mới để tạo bản medium trước khi apply.
+            ImageOptimizationStatus.FINALIZING,
         }
         if self.status not in claimable_statuses:
             raise InvalidJobTransitionError("Image optimization job cannot be claimed")
@@ -247,6 +285,9 @@ class ImageOptimizationJob:
         """Trả toàn bộ output khi danh sách rỗng để giữ tương thích API cũ."""
 
         if not asset_ids:
+            if self.generation_profile is ImageGenerationProfile.FINAL and self.source_asset_ids:
+                selected_sources = set(self.source_asset_ids)
+                return tuple(asset for asset in self.generated_assets if asset.source_asset_id in selected_sources)
             return self.generated_assets
         if len(set(asset_ids)) != len(asset_ids):
             raise InvalidOutputSelectionError("Duplicate output assets are not allowed")
@@ -254,6 +295,17 @@ class ImageOptimizationJob:
         try:
             return tuple(output_by_asset[asset_id] for asset_id in asset_ids)
         except KeyError as error:
+            # Frontend cũ có thể gửi lại ID preview sau khi final output đã được tạo.
+            # Job đã giữ source_asset_ids được chọn nên có thể ánh xạ an toàn sang output final tương ứng.
+            if (
+                self.generation_profile is ImageGenerationProfile.FINAL
+                and self.selected_output_asset_ids
+                and set(asset_ids) == set(self.selected_output_asset_ids)
+            ):
+                selected_sources = set(self.source_asset_ids)
+                final_outputs = tuple(asset for asset in self.generated_assets if asset.source_asset_id in selected_sources)
+                if final_outputs:
+                    return final_outputs
             raise InvalidOutputSelectionError("Selected output does not belong to this job") from error
 
     # Gắn failure code đã redact và giải phóng lease để job có thể được xử lý lại có kiểm soát.

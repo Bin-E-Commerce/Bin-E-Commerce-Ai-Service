@@ -12,6 +12,7 @@ class UserContext:
 
     user_id: str
     permissions: frozenset[str]
+    email: str = ""
 
 
 # Kiểm tra user trước, sau đó mới tách permission để request thiếu quyền không thể tiêu quota LLM.
@@ -21,6 +22,7 @@ def build_user_context(
     user_id: str | None,
     permission_header: str | None,
     required_permission: str,
+    user_email: str | None = None,
 ) -> UserContext:
     """Kiểm tra user context và permission trước khi gọi LLM trả phí."""
 
@@ -31,4 +33,4 @@ def build_user_context(
     if required_permission not in permissions:
         raise AuthorizationError()
 
-    return UserContext(user_id=user_id, permissions=permissions)
+    return UserContext(user_id=user_id, permissions=permissions, email=(user_email or "").strip())

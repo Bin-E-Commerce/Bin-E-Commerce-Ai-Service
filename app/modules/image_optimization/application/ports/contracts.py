@@ -5,7 +5,11 @@ from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
-from app.modules.image_optimization.domain.enums import ImageOptimizationStatus, LifestyleBackgroundPreset
+from app.modules.image_optimization.domain.enums import (
+    ImageGenerationProfile,
+    ImageOptimizationStatus,
+    LifestyleBackgroundPreset,
+)
 from app.modules.image_optimization.domain.models import GeneratedAsset, ImageOptimizationBatch, ImageOptimizationJob
 
 
@@ -35,6 +39,7 @@ class LifestyleBackgroundRequest:
 
     preset: LifestyleBackgroundPreset | None
     description: str | None
+    profile: ImageGenerationProfile = ImageGenerationProfile.FINAL
 
 
 class ImageOptimizationJobRepository(Protocol):
@@ -134,12 +139,12 @@ class ProductOwnerClient(Protocol):
     """Port xac minh ownership truoc khi tao job va apply output."""
 
     async def assert_owned_and_get_updated_at(
-        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset()
+        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset(), seller_email: str = ""
     ) -> datetime:
         """Xac minh san pham thuoc seller va tra version hien tai."""
 
     async def get_cover_asset_id(
-        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset()
+        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset(), seller_email: str = ""
     ) -> UUID:
         """Lay asset ID anh dai dien da duoc Product Service xac minh ownership."""
 
@@ -149,6 +154,7 @@ class ProductOwnerClient(Protocol):
         product_id: UUID,
         requested_asset_ids: tuple[UUID, ...],
         permissions: frozenset[str] = frozenset(),
+        seller_email: str = "",
     ) -> tuple[UUID, ...]:
         """Xac minh cac asset seller chon thuoc product va tra lai danh sach da chuan hoa."""
 
@@ -165,6 +171,7 @@ class ProductMediaClient(Protocol):
         expected_product_updated_at: datetime | None,
         assets: tuple[GeneratedAsset, ...],
         permissions: tuple[str, ...] = (),
+        seller_email: str = "",
     ) -> None:
         """Apply output qua ownership va optimistic concurrency cua Product Service."""
 
@@ -175,6 +182,7 @@ class ProductMediaClient(Protocol):
         product_id: UUID,
         job_id: UUID,
         permissions: tuple[str, ...] = (),
+        seller_email: str = "",
     ) -> None:
         """Khoi phuc snapshot anh goc do Product Service quan ly."""
 

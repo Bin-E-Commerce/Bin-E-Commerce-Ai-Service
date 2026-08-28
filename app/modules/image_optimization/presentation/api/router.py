@@ -4,7 +4,7 @@ import re
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 
 from app.bootstrap.dependencies import (
     get_image_apply_user,
@@ -28,8 +28,9 @@ from app.modules.image_optimization.presentation.api.schemas import (
 router = APIRouter(prefix="/api/v1/seller/ai/image-optimization", tags=["seller-image-optimization"])
 
 
+# Chuyển aggregate domain sang response ổn định, đồng thời trả version sản phẩm để frontend apply đúng optimistic lock.
 def _to_job_response(job: object) -> OptimizationJobResponse:
-    """Chuyen aggregate domain sang schema JSON, khong lo raw persistence fields."""
+    """Chuyển aggregate domain sang schema JSON, không lộ raw persistence fields."""
 
     from app.modules.image_optimization.domain.models import ImageOptimizationJob
 
@@ -40,6 +41,7 @@ def _to_job_response(job: object) -> OptimizationJobResponse:
         product_id=job.product_id,
         status=job.status,
         processing_stage=job.processing_stage,
+        generation_profile=job.generation_profile,
         background_preset=job.background_preset,
         generated_asset_ids=list(job.generated_asset_ids),
         generated_assets=[
@@ -53,6 +55,7 @@ def _to_job_response(job: object) -> OptimizationJobResponse:
             for asset in job.generated_assets
         ],
         created_at=job.created_at,
+        expected_product_updated_at=job.expected_product_updated_at,
         failure_code=job.failure_code,
     )
 
@@ -89,6 +92,7 @@ async def create_image_optimization_jobs(
         background_description=payload.background.description if payload.background else None,
         force_regenerate=payload.force_regenerate,
         permissions=user.permissions,
+        seller_email=user.email,
     )
     batch_id, jobs = await service.create_jobs(command)
     return CreateImageOptimizationResponse(batch_id=batch_id, jobs=[_to_job_response(job) for job in jobs])
@@ -137,11 +141,13 @@ async def reject_image_optimization_job(
 
 
 @router.post("/jobs/{job_id}/apply", response_model=OptimizationJobResponse, response_model_by_alias=True)
+# Nhận xác nhận apply từ seller và giữ nguyên version server đã chụp lúc tạo job.
 async def apply_image_optimization_job(
     job_id: UUID,
     payload: ApplyImageOptimizationRequest,
     user: Annotated[UserContext, Depends(get_image_apply_user)],
     service: Annotated[ImageOptimizationApplicationService, Depends(get_image_optimization_service)],
+    response: Response,
 ) -> OptimizationJobResponse:
     """Map selection sang asset IDs; use case tự kiểm tra owner, version và lifecycle."""
 
@@ -151,7 +157,10 @@ async def apply_image_optimization_job(
         expected_product_updated_at=payload.expected_product_updated_at,
         selected_asset_ids=tuple(image.asset_id for image in payload.images),
         permissions=user.permissions,
+        seller_email=user.email,
     )
+    if updated.status.value == "FINALIZING":
+        response.status_code = status.HTTP_202_ACCEPTED
     return _to_job_response(updated)
 
 
@@ -164,7 +173,7 @@ async def rollback_image_optimization_job(
     """Danh dau rollback sau khi Product Service khoi phuc snapshot anh goc."""
 
     try:
-        job = await service.rollback_job(job_id, UUID(user.user_id), user.permissions)
+        job = await service.rollback_job(job_id, UUID(user.user_id), user.permissions, user.email)
     except LookupError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Optimization job not found") from error
     except InvalidJobTransitionError as error:

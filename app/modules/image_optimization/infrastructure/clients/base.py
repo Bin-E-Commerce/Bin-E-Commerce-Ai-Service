@@ -33,15 +33,18 @@ class InternalHttpClient:
         self._token = token
         self._client = client
 
-    # Tạo context header từ permission đã được Gateway xác thực, không tự bịa permission.
-    def headers(self, owner_id: UUID, permissions: frozenset[str] = frozenset()) -> dict[str, str]:
-        """Không forward JWT, email hoặc header ngoài allow-list."""
+    # Tạo context header từ identity/permission đã được Gateway xác thực, không tự bịa permission.
+    def headers(self, owner_id: UUID, permissions: frozenset[str] = frozenset(), email: str = "") -> dict[str, str]:
+        """Không forward JWT hay header ngoài allow-list; email chỉ dùng để Product Service kiểm tra context."""
 
-        return {
+        headers = {
             "x-user-id": str(owner_id),
             "x-user-permissions": ",".join(sorted(permissions)),
             "x-internal-service-token": self._token.get_secret_value() if self._token else "",
         }
+        if email:
+            headers["x-user-email"] = email
+        return headers
 
     # Dùng connection pool chung; fallback client tạm chỉ dành cho unit test adapter độc lập.
     async def request(self, method: str, url: str, *, timeout: float, **kwargs: Any) -> httpx.Response:

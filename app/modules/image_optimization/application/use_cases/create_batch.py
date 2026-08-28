@@ -4,6 +4,7 @@ Use case xác minh ownership và source asset trước khi tiêu quota. File kh�
 HTTP, SQLAlchemy, Kafka hoặc provider tạo ảnh cụ thể.
 """
 
+import asyncio
 import hashlib
 from dataclasses import dataclass
 from datetime import datetime
@@ -63,6 +64,10 @@ class CreateImageOptimizationBatch:
     async def execute(self, command: CreateOptimizationJobsCommand) -> tuple[str, tuple[ImageOptimizationJob, ...]]:
         """Trả batch cũ cho retry hợp lệ và 409 khi cùng key đại diện payload khác."""
 
+        # Chan request sai truoc idempotency lookup de khong the dung key cu cho workflow nhieu doi tuong.
+        if len(command.product_ids) != 1 or len(command.source_asset_ids) > 1:
+            raise InvalidInputError()
+
         request_hash = command.request_hash()
         existing_batch = await self._repository.find_batch(command.seller_owner_id, command.idempotency_key)
         if existing_batch is not None:
@@ -76,7 +81,14 @@ class CreateImageOptimizationBatch:
             raise BackgroundConfigurationError()
 
         # Ownership và asset selection được resolve trước rate limit để request sai không làm mất lượt seller.
-        resolved_products = tuple([await self._resolve_product(command, product_id) for product_id in command.product_ids])
+        # Tối đa 10 sản phẩm đã được validate ở presentation; resolve ownership song song để giảm tổng latency.
+        # Mỗi coroutine vẫn gọi Product Service độc lập và không chia sẻ state mutable giữa các sản phẩm.
+        # Request chi con mot san pham, sau khi resolve van bat buoc phai co dung mot source asset.
+        resolved_products = tuple(
+            await asyncio.gather(*(self._resolve_product(command, product_id) for product_id in command.product_ids))
+        )
+        if len(resolved_products) != 1 or len(resolved_products[0].source_asset_ids) != 1:
+            raise InvalidInputError()
         if self._rate_limiter is not None:
             await self._rate_limiter.check(
                 key=f"ai:image-optimization:{command.seller_owner_id}",
@@ -138,6 +150,7 @@ class CreateImageOptimizationBatch:
             command.seller_owner_id,
             product_id,
             command.permissions,
+            command.seller_email,
         )
         if command.source_asset_policy == "SELECTED_ASSETS":
             if not command.source_asset_ids:
@@ -147,9 +160,17 @@ class CreateImageOptimizationBatch:
                 product_id,
                 command.source_asset_ids,
                 command.permissions,
+                command.seller_email,
             )
         elif command.source_asset_policy == "COVER_IMAGE":
-            source_ids = (await self._owner_client.get_cover_asset_id(command.seller_owner_id, product_id, command.permissions),)
+            source_ids = (
+                await self._owner_client.get_cover_asset_id(
+                    command.seller_owner_id,
+                    product_id,
+                    command.permissions,
+                    command.seller_email,
+                ),
+            )
         else:
             raise InvalidInputError()
         return _ResolvedProduct(product_id, expected_updated_at, source_ids)

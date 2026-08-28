@@ -43,7 +43,7 @@ def test_rejects_custom_background_for_multiple_products() -> None:
     payload = _payload()
     payload["productIds"] = [str(uuid4()), str(uuid4())]
 
-    with pytest.raises(ValidationError, match="exactly one product"):
+    with pytest.raises(ValidationError, match="at most 1 item"):
         CreateImageOptimizationRequest.model_validate(payload)
 
 

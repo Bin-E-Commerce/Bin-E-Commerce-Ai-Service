@@ -78,20 +78,34 @@ async def _process_partition(
     dlq_topic: str,
     session_factory: async_sessionmaker[AsyncSession],
     processor_factory: object,
+    concurrency: int = 2,
 ) -> None:
     """Dừng partition ở lỗi tạm thời để message sau không bị commit vượt qua message lỗi."""
 
-    for message in messages:
+    # Giới hạn số message xử lý đồng thời để worker không tạo burst provider/CPU.
+    semaphore = asyncio.Semaphore(max(1, concurrency))
+
+    # Parse và xử lý độc lập từng message để lỗi một job không chặn các job còn lại.
+    async def process_message(message: ConsumerRecord[bytes, bytes]) -> BaseException | None:
+        """Parse và xử lý một message độc lập trong giới hạn concurrency."""
+
         try:
             event = _parse_event(message.value)
         except (UnicodeDecodeError, json.JSONDecodeError, KeyError, TypeError, ValueError):
             await _send_dlq(producer, dlq_topic, message)
-        else:
+            return None
+        async with semaphore:
             try:
                 await _process_event(event, session_factory=session_factory, processor_factory=processor_factory)
-            except Exception:
+            except Exception as error:
                 logger.exception("Image optimization message failed before commit")
-                break
+                return error
+        return None
+
+    results = await asyncio.gather(*(process_message(message) for message in messages))
+    for message, result in zip(messages, results, strict=True):
+        if result is not None:
+            break
         await consumer.commit({partition: OffsetAndMetadata(message.offset + 1, "")})
 
 
@@ -160,6 +174,7 @@ async def run_worker() -> None:
                             dlq_topic=settings.kafka_image_optimization_dlq_topic,
                             session_factory=session_factory,
                             processor_factory=processor_factory,
+                            concurrency=settings.ai_image_worker_concurrency,
                         )
                         for partition, messages in records.items()
                     )

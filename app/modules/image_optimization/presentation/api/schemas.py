@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.modules.image_optimization.domain.enums import (
+    ImageGenerationProfile,
     ImageOptimizationMode,
     ImageOptimizationProcessingStage,
     ImageOptimizationStatus,
@@ -48,8 +49,8 @@ class CreateImageOptimizationRequest(BaseModel):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
-    product_ids: list[UUID] = Field(min_length=1, max_length=10, alias="productIds")
-    source_asset_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=9, alias="sourceAssetIds")
+    product_ids: list[UUID] = Field(min_length=1, max_length=1, alias="productIds")
+    source_asset_ids: list[UUID] | None = Field(default=None, min_length=1, max_length=1, alias="sourceAssetIds")
     source_asset_policy: SourceAssetPolicy = Field(default=SourceAssetPolicy.COVER_IMAGE, alias="sourceAssetPolicy")
     modes: list[ImageOptimizationMode] = Field(min_length=1, max_length=2)
     background: LifestyleBackgroundRequestSchema | None = None
@@ -84,10 +85,12 @@ class OptimizationJobResponse(BaseModel):
     product_id: UUID = Field(alias="productId")
     status: ImageOptimizationStatus
     processing_stage: ImageOptimizationProcessingStage = Field(alias="processingStage")
+    generation_profile: ImageGenerationProfile = Field(alias="generationProfile")
     background_preset: LifestyleBackgroundPreset | None = Field(default=None, alias="backgroundPreset")
     generated_asset_ids: list[UUID] = Field(alias="generatedAssetIds")
     generated_assets: list[dict[str, str | None]] = Field(default_factory=list, alias="generatedAssets")
     created_at: datetime = Field(alias="createdAt")
+    expected_product_updated_at: datetime | None = Field(default=None, alias="expectedProductUpdatedAt")
     failure_code: str | None = Field(default=None, alias="failureCode")
 
 

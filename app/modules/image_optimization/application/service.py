@@ -49,6 +49,7 @@ class ImageOptimizationApplicationService:
         background_cipher: BackgroundDescriptionCipher | None = None,
         *,
         allow_memory_adapters: bool = True,
+        finalize_before_apply: bool = False,
     ) -> None:
         """Chỉ cho phép downstream thiếu khi runtime mode memory được truyền rõ ràng."""
 
@@ -68,6 +69,8 @@ class ImageOptimizationApplicationService:
             repository,
             product_media_client,
             allow_memory_without_downstream=allow_memory_adapters,
+            publisher=publisher,
+            finalize_before_apply=finalize_before_apply,
         )
         self._reject = RejectImageOptimizationJob(repository, media_asset_client)
         self._rollback = RollbackImageOptimizationJob(repository, product_media_client)
@@ -102,10 +105,11 @@ class ImageOptimizationApplicationService:
         job_id: UUID,
         seller_owner_id: UUID,
         permissions: frozenset[str] = frozenset(),
+        seller_email: str = "",
     ) -> ImageOptimizationJob:
         """Product Service vẫn là source of truth cho snapshot ảnh gốc."""
 
-        return await self._rollback.execute(job_id, seller_owner_id, permissions)
+        return await self._rollback.execute(job_id, seller_owner_id, permissions, seller_email)
 
     # Chuyển apply sang use case và truyền đúng asset IDs seller chọn cùng permission đã xác thực.
     async def apply_job(
@@ -116,6 +120,7 @@ class ImageOptimizationApplicationService:
         expected_product_updated_at: datetime | None = None,
         selected_asset_ids: tuple[UUID, ...] = (),
         permissions: frozenset[str] = frozenset(),
+        seller_email: str = "",
     ) -> ImageOptimizationJob:
         """Fallback version từ job chỉ phục vụ call cũ; router mới luôn truyền version request."""
 
@@ -133,5 +138,6 @@ class ImageOptimizationApplicationService:
                 expected_product_updated_at=expected_product_updated_at,
                 selected_asset_ids=selected_asset_ids,
                 permissions=permissions,
+                seller_email=seller_email,
             )
         )

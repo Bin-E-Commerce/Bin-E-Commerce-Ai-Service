@@ -22,6 +22,23 @@ class Settings(BaseSettings):
     openai_timeout_seconds: float = 20.0
     openai_image_timeout_seconds: float = 120.0
     openai_image_quality: Literal["low", "medium", "high"] = "medium"
+    # Hồ sơ preview và final được cấu hình riêng để không phải sửa code khi điều chỉnh chi phí/latency.
+    ai_image_preview_quality: Literal["low", "medium", "high"] = "low"
+    # Preview lifestyle phải đủ chi tiết để seller đánh giá việc giữ nguyên sản phẩm; ảnh final vẫn tạo 1024x1024.
+    ai_image_preview_size: Literal["256x256", "512x512", "1024x1024", "1536x1024", "1024x1536"] = "1024x1024"
+    ai_image_preview_format: Literal["jpeg", "png", "webp"] = "jpeg"
+    ai_image_preview_compression: int = 75
+    ai_image_preview_max_dimension: int = 1024
+    ai_image_preview_input_fidelity: Literal["low", "high"] = "high"
+    # Lifestyle cần đủ thời gian cho provider hoàn tất ảnh; timeout không phải SLA hiển thị cho seller.
+    ai_image_preview_timeout_seconds: float = 120.0
+    ai_image_final_quality: Literal["low", "medium", "high"] = "medium"
+    ai_image_final_size: Literal["256x256", "512x512", "1024x1024", "1536x1024", "1024x1536"] = "1024x1024"
+    ai_image_final_format: Literal["jpeg", "png", "webp"] = "jpeg"
+    ai_image_final_compression: int = 85
+    ai_image_final_max_dimension: int = 1024
+    ai_image_final_input_fidelity: Literal["low", "high"] = "high"
+    ai_image_final_timeout_seconds: float = 120.0
     openai_image_output_hosts: str = "oaidalleapiprodscus.blob.core.windows.net,cdn.openai.com"
     llm_provider: str = "openai"
     product_name_provider: Literal["openai"] = "openai"

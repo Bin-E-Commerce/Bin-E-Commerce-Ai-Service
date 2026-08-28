@@ -6,8 +6,12 @@ Service chấp nhận. Retry dùng cùng job ID để downstream có thể xử 
 
 from app.core.errors import OptimizationJobNotReadyError
 from app.modules.image_optimization.application.commands import ApplyOptimizationOutputsCommand
-from app.modules.image_optimization.application.ports import ImageOptimizationJobRepository, ProductMediaClient
-from app.modules.image_optimization.domain.enums import ImageOptimizationStatus
+from app.modules.image_optimization.application.ports import (
+    ImageOptimizationJobRepository,
+    OptimizationEventPublisher,
+    ProductMediaClient,
+)
+from app.modules.image_optimization.domain.enums import ImageGenerationProfile, ImageOptimizationStatus
 from app.modules.image_optimization.domain.errors import InvalidJobTransitionError, InvalidOutputSelectionError
 from app.modules.image_optimization.domain.models import ImageOptimizationJob
 
@@ -23,12 +27,16 @@ class ApplyImageOptimizationOutputs:
         product_media_client: ProductMediaClient | None,
         *,
         allow_memory_without_downstream: bool,
+        publisher: OptimizationEventPublisher | None = None,
+        finalize_before_apply: bool = False,
     ) -> None:
         """Chỉ cho phép thiếu downstream trong test/runtime memory được khai báo rõ."""
 
         self._repository = repository
         self._product_media_client = product_media_client
         self._allow_memory_without_downstream = allow_memory_without_downstream
+        self._publisher = publisher
+        self._finalize_before_apply = finalize_before_apply
 
     # Xác minh lifecycle, optimistic version và selected assets trước side effect.
     async def execute(self, command: ApplyOptimizationOutputsCommand) -> ImageOptimizationJob:
@@ -38,6 +46,10 @@ class ApplyImageOptimizationOutputs:
         if job is None:
             raise OptimizationJobNotReadyError()
         if job.status is ImageOptimizationStatus.APPLIED:
+            return job
+        # Khi worker dang tao ban final, request lap lai chi xac nhan lan chay da duoc tiep nhan.
+        # Khong goi Product Service hoac provider lan nua de tranh duplicate side effect va chi phi AI.
+        if job.status is ImageOptimizationStatus.FINALIZING:
             return job
         if job.status not in {ImageOptimizationStatus.REVIEW_REQUIRED, ImageOptimizationStatus.SUCCEEDED}:
             raise OptimizationJobNotReadyError()
@@ -50,18 +62,41 @@ class ApplyImageOptimizationOutputs:
         if not selected_outputs or any(not output.public_url for output in selected_outputs):
             raise OptimizationJobNotReadyError()
 
+        # Production tạo ảnh medium trước; memory tests vẫn giữ contract apply cũ để không cần broker thật.
+        if self._finalize_before_apply and job.generation_profile is ImageGenerationProfile.PREVIEW:
+            try:
+                finalizing = job.request_finalization(command.selected_asset_ids)
+            except (InvalidJobTransitionError, InvalidOutputSelectionError) as error:
+                raise OptimizationJobNotReadyError() from error
+            await self._repository.save(finalizing)
+            if self._publisher is None:
+                raise OptimizationJobNotReadyError()
+            await self._publisher.publish_requested(finalizing)
+            return finalizing
+
         if self._product_media_client is None:
             if not self._allow_memory_without_downstream:
                 raise OptimizationJobNotReadyError()
         else:
-            await self._product_media_client.apply_media(
-                seller_owner_id=command.seller_owner_id,
-                product_id=job.product_id,
-                job_id=job.job_id,
-                expected_product_updated_at=job.expected_product_updated_at,
-                assets=selected_outputs,
-                permissions=tuple(sorted(command.permissions)),
-            )
+            if command.seller_email:
+                await self._product_media_client.apply_media(
+                    seller_owner_id=command.seller_owner_id,
+                    product_id=job.product_id,
+                    job_id=job.job_id,
+                    expected_product_updated_at=job.expected_product_updated_at,
+                    assets=selected_outputs,
+                    permissions=tuple(sorted(command.permissions)),
+                    seller_email=command.seller_email,
+                )
+            else:
+                await self._product_media_client.apply_media(
+                    seller_owner_id=command.seller_owner_id,
+                    product_id=job.product_id,
+                    job_id=job.job_id,
+                    expected_product_updated_at=job.expected_product_updated_at,
+                    assets=selected_outputs,
+                    permissions=tuple(sorted(command.permissions)),
+                )
         try:
             updated = job.transition(ImageOptimizationStatus.APPLIED).release_lease()
         except InvalidJobTransitionError as error:

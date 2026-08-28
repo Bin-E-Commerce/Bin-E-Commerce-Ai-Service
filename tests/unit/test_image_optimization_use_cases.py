@@ -10,7 +10,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.core.errors import IdempotencyKeyReusedError, OptimizationJobNotReadyError
+from app.core.errors import IdempotencyKeyReusedError, InvalidInputError, OptimizationJobNotReadyError
 from app.modules.image_optimization.application.commands import (
     ApplyOptimizationOutputsCommand,
     CreateOptimizationJobsCommand,
@@ -137,6 +137,34 @@ async def test_apply_rejects_output_from_another_job() -> None:
     assert client.applied_assets == ()
 
 
+# Xac nhan request apply lap lai trong luc final worker dang chay chi tra ve job hien tai.
+@pytest.mark.asyncio
+async def test_apply_is_idempotent_while_finalization_is_running() -> None:
+    """AAA: request lap lai khong goi Product Service them lan nua."""
+
+    repository = InMemoryImageOptimizationJobRepository()
+    owner_id = uuid4()
+    job, outputs = _review_job(owner_id, uuid4())
+    finalizing_job = job.request_finalization((outputs[0].asset_id,))
+    await repository.save(finalizing_job)
+    client = _ProductMediaClient()
+    use_case = ApplyImageOptimizationOutputs(repository, client, allow_memory_without_downstream=False)
+
+    result = await use_case.execute(
+        ApplyOptimizationOutputsCommand(
+            job_id=finalizing_job.job_id,
+            seller_owner_id=owner_id,
+            expected_product_updated_at=finalizing_job.expected_product_updated_at,
+            selected_asset_ids=(),
+            permissions=frozenset({"seller.ai.image_optimization.apply"}),
+        )
+    )
+
+    assert result is finalizing_job
+    assert result.status is ImageOptimizationStatus.FINALIZING
+    assert client.applied_assets == ()
+
+
 # Xác nhận cùng idempotency key không thể đại diện hai payload khác nhau.
 @pytest.mark.asyncio
 async def test_idempotency_key_reuse_with_different_payload_returns_conflict() -> None:
@@ -164,7 +192,7 @@ async def test_idempotency_key_reuse_with_different_payload_returns_conflict() -
 
 # Xác nhận batch nhiều sản phẩm dùng identity job riêng và không vướng unique idempotency legacy.
 @pytest.mark.asyncio
-async def test_multi_product_batch_creates_distinct_internal_job_keys() -> None:
+async def test_multi_product_batch_is_rejected() -> None:
     """AAA: client key nằm ở batch, từng job dùng batch/product identity nội bộ."""
 
     repository = InMemoryImageOptimizationJobRepository()
@@ -172,20 +200,19 @@ async def test_multi_product_batch_creates_distinct_internal_job_keys() -> None:
     service = ImageOptimizationApplicationService(repository, publisher)
     products = (uuid4(), uuid4())
 
-    _batch_id, jobs = await service.create_jobs(
-        CreateOptimizationJobsCommand(
-            seller_owner_id=uuid4(),
-            product_ids=products,
-            source_asset_policy="COVER_IMAGE",
-            modes=(ImageOptimizationMode.WHITE_BACKGROUND,),
-            idempotency_key="multi-product-client-key",
-            expected_product_updated_at=None,
+    with pytest.raises(InvalidInputError):
+        await service.create_jobs(
+            CreateOptimizationJobsCommand(
+                seller_owner_id=uuid4(),
+                product_ids=products,
+                source_asset_policy="COVER_IMAGE",
+                modes=(ImageOptimizationMode.WHITE_BACKGROUND,),
+                idempotency_key="multi-product-client-key",
+                expected_product_updated_at=None,
+            )
         )
-    )
 
-    assert tuple(job.product_id for job in jobs) == products
-    assert len({job.idempotency_key for job in jobs}) == 2
-    assert len(publisher.events) == 2
+    assert len(publisher.events) == 0
 
 
 # Fake Media Service giữ source bytes và tạo asset ID output trong RAM.

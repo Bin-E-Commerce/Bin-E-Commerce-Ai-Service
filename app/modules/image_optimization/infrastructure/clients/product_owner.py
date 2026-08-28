@@ -29,11 +29,11 @@ class HttpProductOwnerClient:
 
     # Xác minh product và trả optimistic version dùng ở apply.
     async def assert_owned_and_get_updated_at(
-        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset()
+        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset(), seller_email: str = ""
     ) -> datetime:
         """Không tin product ID từ frontend trước khi tạo job trả phí."""
 
-        body = await self._get_product(seller_owner_id, product_id, permissions)
+        body = await self._get_product(seller_owner_id, product_id, permissions, seller_email)
         updated_at = body.get("updatedAt")
         if not isinstance(updated_at, str):
             raise ProviderUnavailableError()
@@ -44,16 +44,23 @@ class HttpProductOwnerClient:
 
     # Lấy asset ảnh đại diện đã được Product Service trả về cho đúng owner.
     async def get_cover_asset_id(
-        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset()
+        self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str] = frozenset(), seller_email: str = ""
     ) -> UUID:
         """Không nhận URL hoặc asset cover trực tiếp từ browser."""
 
-        body = await self._get_product(seller_owner_id, product_id, permissions)
+        body = await self._get_product(seller_owner_id, product_id, permissions, seller_email)
         images = body.get("images")
         cover = next((item for item in images or [] if isinstance(item, dict) and item.get("isThumbnail")), None)
         if not isinstance(cover, dict):
             raise InvalidInputError()
-        asset_id = cover.get("externalImageId") or self._asset_id_from_product_url(cover.get("imageUrl"), seller_owner_id)
+        # Ưu tiên asset nguồn bất biến; externalImageId chỉ là fallback cho dữ liệu legacy chưa migrate.
+        # Tối ưu lại phải đọc ảnh đang hiển thị (kể cả output AI trước đó), sau đó mới fallback về ảnh gốc.
+        asset_id = (
+            cover.get("aiAssetId")
+            or cover.get("sourceAssetId")
+            or cover.get("externalImageId")
+            or self._asset_id_from_product_url(cover.get("imageUrl"), seller_owner_id)
+        )
         try:
             return UUID(str(asset_id))
         except (ValueError, TypeError) as error:
@@ -66,17 +73,25 @@ class HttpProductOwnerClient:
         product_id: UUID,
         requested_asset_ids: tuple[UUID, ...],
         permissions: frozenset[str] = frozenset(),
+        seller_email: str = "",
     ) -> tuple[UUID, ...]:
         """Giữ thứ tự seller chọn nhưng từ chối cả request nếu có một asset không thuộc product."""
 
         if not requested_asset_ids or len(set(requested_asset_ids)) != len(requested_asset_ids):
             raise InvalidInputError()
-        body = await self._get_product(seller_owner_id, product_id, permissions)
+        body = await self._get_product(seller_owner_id, product_id, permissions, seller_email)
         available: set[UUID] = set()
         for image in body.get("images") or []:
             if not isinstance(image, dict):
                 continue
-            raw_asset_id = image.get("externalImageId") or self._asset_id_from_product_url(image.get("imageUrl"), seller_owner_id)
+            # Mỗi output AI vẫn phải được resolve về asset nguồn của chính product image row.
+            # Dùng output đang active để seller có thể tạo một phiên bản lifestyle mới từ ảnh đã tối ưu.
+            raw_asset_id = (
+                image.get("aiAssetId")
+                or image.get("sourceAssetId")
+                or image.get("externalImageId")
+                or self._asset_id_from_product_url(image.get("imageUrl"), seller_owner_id)
+            )
             try:
                 available.add(UUID(str(raw_asset_id)))
             except (ValueError, TypeError):
@@ -86,7 +101,13 @@ class HttpProductOwnerClient:
         return requested_asset_ids
 
     # Gọi endpoint seller detail với context thật đã xác thực.
-    async def _get_product(self, seller_owner_id: UUID, product_id: UUID, permissions: frozenset[str]) -> dict[str, Any]:
+    async def _get_product(
+        self,
+        seller_owner_id: UUID,
+        product_id: UUID,
+        permissions: frozenset[str],
+        seller_email: str = "",
+    ) -> dict[str, Any]:
         """Map transport/schema lỗi thành public provider error không lộ response body."""
 
         try:
@@ -94,7 +115,7 @@ class HttpProductOwnerClient:
                 "GET",
                 f"{self._base_url}/api/v1/seller/products/{product_id}",
                 timeout=10,
-                headers=self._http.headers(seller_owner_id, permissions),
+                headers=self._http.headers(seller_owner_id, permissions, seller_email),
             )
             self._http.ensure_success(response)
             body = response.json()

@@ -10,6 +10,13 @@ class ImageOptimizationMode(StrEnum):
     LIFESTYLE_BACKGROUND = "LIFESTYLE_BACKGROUND"
 
 
+class ImageGenerationProfile(StrEnum):
+    """Hồ sơ chất lượng dùng để tách bản xem nhanh và ảnh cuối cùng."""
+
+    PREVIEW = "PREVIEW"
+    FINAL = "FINAL"
+
+
 # Xác định các bối cảnh lifestyle đã được biên tập sẵn để prompt nhất quán và không cần seller viết mô tả cho mọi lần tạo ảnh.
 class LifestyleBackgroundPreset(StrEnum):
     """Các lựa chọn bối cảnh an toàn mà seller có thể dùng cho ảnh lifestyle."""
@@ -39,6 +46,7 @@ class ImageOptimizationStatus(StrEnum):
     PENDING = "PENDING"
     PROCESSING = "PROCESSING"
     REVIEW_REQUIRED = "REVIEW_REQUIRED"
+    FINALIZING = "FINALIZING"
     SUCCEEDED = "SUCCEEDED"
     REJECTED = "REJECTED"
     APPLIED = "APPLIED"

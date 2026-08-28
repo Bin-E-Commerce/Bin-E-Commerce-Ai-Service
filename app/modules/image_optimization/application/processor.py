@@ -10,7 +10,7 @@ from dataclasses import replace
 from typing import TypeVar
 from uuid import UUID
 
-from app.core.errors import ProviderUnavailableError
+from app.core.errors import AppError, ProviderUnavailableError
 from app.modules.image_optimization.application.ports import (
     BackgroundDescriptionCipher,
     ImageOptimizationJobRepository,
@@ -21,6 +21,7 @@ from app.modules.image_optimization.application.ports import (
 )
 from app.modules.image_optimization.application.provider_registry import ImageOptimizationProviderRegistry
 from app.modules.image_optimization.domain.enums import (
+    ImageGenerationProfile,
     ImageOptimizationMode,
     ImageOptimizationProcessingStage,
     ImageOptimizationStatus,
@@ -83,8 +84,14 @@ class ImageOptimizationJobProcessor:
 
         outputs: list[GeneratedAsset] = []
         try:
+            # Preview chỉ ưu tiên asset đầu tiên để seller nhận kết quả sớm; final xử lý toàn bộ asset đã chọn.
+            source_asset_ids = (
+                processing.source_asset_ids[:1]
+                if processing.generation_profile is ImageGenerationProfile.PREVIEW
+                else processing.source_asset_ids
+            )
             sources = await asyncio.gather(
-                *(self._download_source(processing, source_asset_id) for source_asset_id in processing.source_asset_ids)
+                *(self._download_source(processing, source_asset_id) for source_asset_id in source_asset_ids)
             )
             processing = processing.with_processing_stage(ImageOptimizationProcessingStage.PREPARING_IMAGE)
             await self._repository.save(processing)
@@ -122,9 +129,12 @@ class ImageOptimizationJobProcessor:
             completed = completed.with_processing_stage(ImageOptimizationProcessingStage.READY)
             completed = completed.transition(ImageOptimizationStatus.REVIEW_REQUIRED).release_lease()
             await self._repository.save(completed)
-        except (ProviderUnavailableError, OSError, TimeoutError, ValueError) as error:
-            # Cleanup được gọi có chủ đích; nếu cleanup lỗi, failure code vẫn ghi nhận để vận hành xử lý lại.
-            failure_code = type(error).__name__.upper()
+        except (AppError, OSError, TimeoutError, ValueError) as error:
+            # Mọi lỗi nghiệp vụ/hạ tầng trong pipeline phải kết thúc job rõ ràng, tránh để UI polling mãi ở PROCESSING.
+            # AppError giữ nguyên loại lỗi an toàn (ví dụ CONFIGURATIONERROR hoặc INVALIDPROVIDERRESPONSEERROR)
+            # để API trả failureCode có ý nghĩa; lỗi Python còn lại vẫn được chuẩn hóa thành tên type.
+            # Ưu tiên mã lỗi ổn định của AppError để API/UI không phụ thuộc tên class Python.
+            failure_code = error.code if isinstance(error, AppError) else type(error).__name__.upper()
             if outputs:
                 try:
                     await self._media_client.cleanup_outputs(
@@ -176,7 +186,11 @@ class ImageOptimizationJobProcessor:
             if self._background_cipher is None:
                 raise ProviderUnavailableError()
             description = self._background_cipher.decrypt(job.background_description_ciphertext)
-        request = LifestyleBackgroundRequest(preset=job.background_preset, description=description)
+        request = LifestyleBackgroundRequest(
+            preset=job.background_preset,
+            description=description,
+            profile=job.generation_profile,
+        )
 
         # Chỉ capability local miễn phí được retry; provider trả phí luôn được gọi đúng một lần.
         if self._providers.is_local(mode):

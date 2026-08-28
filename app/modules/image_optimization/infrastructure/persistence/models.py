@@ -48,6 +48,8 @@ class ImageOptimizationJobRecord(Base):
     product_id: Mapped[UUID] = mapped_column(Uuid, index=True)
     source_asset_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
     requested_modes: Mapped[list[str]] = mapped_column(JSONB, default=list)
+    generation_profile: Mapped[str] = mapped_column(String(16), default="PREVIEW")
+    selected_output_asset_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
     # Hai cột dưới là legacy compatibility; code mới đọc output table làm source of truth.
     generated_asset_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
     generated_assets: Mapped[list[dict[str, str | None]]] = mapped_column(JSONB, default=list)

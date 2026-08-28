@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID, uuid4
 
+from app.modules.image_optimization.domain.enums import ImageGenerationProfile
 from app.modules.image_optimization.domain.models import ImageOptimizationJob, utc_now
 
 
@@ -26,6 +27,7 @@ class ImageOptimizationRequestedEvent:
     occurred_at: datetime
     event_type: str = "ai.image-optimization.requested"
     schema_version: int = 1
+    generation_profile: ImageGenerationProfile = ImageGenerationProfile.PREVIEW
 
     # Tạo event từ job sau khi job đã có identity persistence.
     @classmethod
@@ -37,9 +39,12 @@ class ImageOptimizationRequestedEvent:
             job_id=job.job_id,
             product_id=job.product_id,
             seller_owner_id=job.seller_owner_id,
-            source_asset_ids=job.source_asset_ids,
+            source_asset_ids=job.source_asset_ids[:1]
+            if job.generation_profile is ImageGenerationProfile.PREVIEW
+            else job.source_asset_ids,
             modes=tuple(mode.value for mode in job.requested_modes),
             occurred_at=utc_now(),
+            generation_profile=job.generation_profile,
         )
 
     # Chuyển event sang wire payload camelCase ổn định cho Kafka.
@@ -55,6 +60,7 @@ class ImageOptimizationRequestedEvent:
             "sellerOwnerId": str(self.seller_owner_id),
             "sourceAssetIds": [str(value) for value in self.source_asset_ids],
             "modes": list(self.modes),
+            "generationProfile": self.generation_profile.value,
             "occurredAt": self.occurred_at.isoformat(),
         }
 
@@ -77,4 +83,5 @@ class ImageOptimizationRequestedEvent:
             source_asset_ids=tuple(UUID(str(value)) for value in source_values),
             modes=tuple(str(value) for value in mode_values),
             occurred_at=datetime.fromisoformat(str(payload["occurredAt"])),
+            generation_profile=ImageGenerationProfile(str(payload.get("generationProfile", "PREVIEW"))),
         )

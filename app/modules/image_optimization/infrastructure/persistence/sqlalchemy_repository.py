@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert as postgresql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.image_optimization.domain.enums import (
+    ImageGenerationProfile,
     ImageOptimizationMode,
     ImageOptimizationProcessingStage,
     ImageOptimizationStatus,
@@ -206,6 +207,8 @@ class SqlAlchemyImageOptimizationJobRepository:
         record.batch_id = job.batch_id
         record.source_asset_ids = [str(value) for value in job.source_asset_ids]
         record.requested_modes = [value.value for value in job.requested_modes]
+        record.generation_profile = job.generation_profile.value
+        record.selected_output_asset_ids = [str(value) for value in job.selected_output_asset_ids]
         record.generated_asset_ids = [str(value) for value in job.generated_asset_ids]
         record.generated_assets = [
             {
@@ -304,6 +307,8 @@ class SqlAlchemyImageOptimizationJobRepository:
             product_id=record.product_id,
             source_asset_ids=tuple(UUID(value) for value in record.source_asset_ids),
             requested_modes=tuple(ImageOptimizationMode(value) for value in record.requested_modes),
+            generation_profile=ImageGenerationProfile(record.generation_profile or "PREVIEW"),
+            selected_output_asset_ids=tuple(UUID(value) for value in (record.selected_output_asset_ids or [])),
             idempotency_key=record.idempotency_key,
             request_hash=record.request_hash,
             expected_product_updated_at=record.expected_product_updated_at,

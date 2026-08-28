@@ -32,48 +32,52 @@ SettingsDependency = Annotated[Settings, Depends(get_settings)]
 def get_image_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
+    x_user_email: Annotated[str | None, Header(alias="x-user-email")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
     """Chặn feature disabled và context thiếu quyền ở HTTP boundary."""
 
     if not settings.ai_image_optimization_enabled:
         raise ConfigurationError()
-    return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.view")
+    return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.view", x_user_email)
 
 
 # Xác thực permission generate trước khi request có thể tiêu quota hoặc tạo outbox.
 def get_image_generate_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
+    x_user_email: Annotated[str | None, Header(alias="x-user-email")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
     """Trả immutable UserContext đã parse permission một lần."""
 
     if not settings.ai_image_optimization_enabled:
         raise ConfigurationError()
-    return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.generate")
+    return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.generate", x_user_email)
 
 
 # Xác thực permission apply trước khi Product Service mutation được gọi.
 def get_image_apply_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
+    x_user_email: Annotated[str | None, Header(alias="x-user-email")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
     """Giữ nguyên toàn bộ permission đã xác thực để downstream không phải tự tạo policy."""
 
-    return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.apply")
+    return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.apply", x_user_email)
 
 
 # Xác thực quyền rollback riêng với quyền apply.
 def get_image_rollback_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
+    x_user_email: Annotated[str | None, Header(alias="x-user-email")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
     """Không cho user chỉ có view tự khôi phục media sản phẩm."""
 
-    return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.rollback")
+    return build_user_context(x_user_id, x_user_permissions, "seller.ai.image_optimization.rollback", x_user_email)
 
 
 # Wiring facade từ từng adapter theo đúng runtime mode đã được lifespan kiểm tra.
@@ -119,6 +123,7 @@ async def get_image_optimization_service(request: Request) -> AsyncIterator[Imag
             rate_limit_window_seconds=settings.ai_image_rate_limit_window_seconds,
             background_cipher=background_cipher,
             allow_memory_adapters=False,
+            finalize_before_apply=True,
         )
 
 
@@ -126,11 +131,12 @@ async def get_image_optimization_service(request: Request) -> AsyncIterator[Imag
 def get_current_user(
     settings: SettingsDependency,
     x_user_id: Annotated[str | None, Header(alias="x-user-id")] = None,
+    x_user_email: Annotated[str | None, Header(alias="x-user-email")] = None,
     x_user_permissions: Annotated[str | None, Header(alias="x-user-permissions")] = None,
 ) -> UserContext:
     """Chặn request thiếu quyền trước khi khởi tạo provider trả phí."""
 
-    return build_user_context(x_user_id, x_user_permissions, settings.required_permission)
+    return build_user_context(x_user_id, x_user_permissions, settings.required_permission, x_user_email)
 
 
 # Wiring use case gợi ý tên với cache/rate limiter đã được lifespan chọn.

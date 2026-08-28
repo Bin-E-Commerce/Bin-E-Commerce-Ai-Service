@@ -77,4 +77,5 @@ async def test_image_optimization_returns_accepted_job() -> None:
     assert response.status_code == 202
     assert response.json()["batchId"] == "image-optimization-route-test"
     assert response.json()["jobs"][0]["status"] == ImageOptimizationStatus.PENDING.value
+    assert response.json()["jobs"][0]["expectedProductUpdatedAt"]
     application.dependency_overrides.clear()

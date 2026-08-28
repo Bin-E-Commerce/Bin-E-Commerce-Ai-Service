@@ -28,6 +28,7 @@ class CreateOptimizationJobsCommand:
     background_description: str | None = None
     force_regenerate: bool = False
     permissions: frozenset[str] = frozenset()
+    seller_email: str = ""
 
     # Hash mọi trường ảnh hưởng kết quả để cùng idempotency key không thể đại diện hai payload khác nhau.
     def request_hash(self) -> str:
@@ -59,3 +60,4 @@ class ApplyOptimizationOutputsCommand:
     expected_product_updated_at: datetime
     selected_asset_ids: tuple[UUID, ...]
     permissions: frozenset[str]
+    seller_email: str = ""

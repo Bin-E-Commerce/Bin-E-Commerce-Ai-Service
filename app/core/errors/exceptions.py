@@ -94,6 +94,42 @@ class ProviderUnavailableError(AppError):
     public_message = "The AI provider is temporarily unavailable."
 
 
+# Phân biệt lỗi quyền/cấu hình provider với lỗi mạng để vận hành không phải đoán nguyên nhân từ mã chung.
+class ProviderConfigurationError(AppError):
+    """Provider từ chối vì API key, project hoặc quyền dùng model chưa hợp lệ."""
+
+    status_code = 503
+    code = "AI_PROVIDER_CONFIGURATION_ERROR"
+    public_message = "The AI provider is not enabled for this project."
+
+
+# Báo riêng quota/rate limit của provider; không nhầm với rate limit do seller đặt ở AI Service.
+class ProviderRateLimitedError(AppError):
+    """Provider tạm thời giới hạn số lượt tạo ảnh."""
+
+    status_code = 503
+    code = "AI_PROVIDER_RATE_LIMITED"
+    public_message = "The AI image provider is temporarily rate limited."
+
+
+# Báo timeout riêng để UI phân biệt provider chậm với lỗi cấu hình hoặc request bị từ chối.
+class ProviderTimeoutError(AppError):
+    """Provider không trả kết quả trong thời gian profile cho phép."""
+
+    status_code = 503
+    code = "AI_PROVIDER_TIMEOUT"
+    public_message = "The AI image provider took too long to respond."
+
+
+# Báo request không hợp lệ ở provider để tránh retry một lời gọi trả phí chắc chắn thất bại.
+class ProviderRequestRejectedError(AppError):
+    """Provider không chấp nhận tham số hoặc dữ liệu ảnh của request."""
+
+    status_code = 502
+    code = "AI_PROVIDER_REQUEST_REJECTED"
+    public_message = "The AI image provider rejected the request."
+
+
 # Lỗi này bảo đảm output không hợp schema không được ghi vào cache hoặc trả cho frontend.
 class InvalidProviderResponseError(AppError):
     """Provider trả structured output không đúng hợp đồng nghiệp vụ."""

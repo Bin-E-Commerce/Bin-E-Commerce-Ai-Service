@@ -27,6 +27,7 @@ class RollbackImageOptimizationJob:
         job_id: UUID,
         seller_owner_id: UUID,
         permissions: frozenset[str] = frozenset(),
+        seller_email: str = "",
     ) -> ImageOptimizationJob:
         """Retry job đã ROLLED_BACK trả kết quả cũ mà không gọi downstream lại."""
 
@@ -36,12 +37,21 @@ class RollbackImageOptimizationJob:
         if job.status is ImageOptimizationStatus.ROLLED_BACK:
             return job
         if self._product_media_client is not None:
-            await self._product_media_client.rollback_media(
-                seller_owner_id=seller_owner_id,
-                product_id=job.product_id,
-                job_id=job.job_id,
-                permissions=tuple(sorted(permissions)),
-            )
+            if seller_email:
+                await self._product_media_client.rollback_media(
+                    seller_owner_id=seller_owner_id,
+                    product_id=job.product_id,
+                    job_id=job.job_id,
+                    permissions=tuple(sorted(permissions)),
+                    seller_email=seller_email,
+                )
+            else:
+                await self._product_media_client.rollback_media(
+                    seller_owner_id=seller_owner_id,
+                    product_id=job.product_id,
+                    job_id=job.job_id,
+                    permissions=tuple(sorted(permissions)),
+                )
         updated = job.transition(ImageOptimizationStatus.ROLLED_BACK).release_lease()
         await self._repository.save(updated)
         return updated

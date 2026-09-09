@@ -79,6 +79,17 @@ class Settings(BaseSettings):
     kafka_image_optimization_topic: str = "ai.image-optimization.requested.v1"
     kafka_image_optimization_dlq_topic: str = "ai.image-optimization.dlq.v1"
     kafka_consumer_group: str = "ai-service.image-optimization-worker.v1"
+    embedding_provider: str = "openai"
+    embedding_model: str = "text-embedding-3-small"
+    embedding_model_version: str = "text-embedding-3-small"
+    embedding_dimensions: int = 1536
+    embedding_timeout_seconds: float = 30.0
+    embedding_max_retry_attempts: int = 5
+    embedding_worker_concurrency: int = 4
+    embedding_requested_topic: str = "recommendation.product-embedding.requested.v1"
+    embedding_generated_topic: str = "recommendation.product-embedding.generated.v1"
+    embedding_dlq_topic: str = "recommendation.product-embedding.dlq.v1"
+    embedding_consumer_group: str = "ai-service.embedding-worker.v1"
     media_service_url: str = "http://localhost:3004"
     product_service_url: str = "http://localhost:3008"
     internal_service_token: SecretStr | None = None

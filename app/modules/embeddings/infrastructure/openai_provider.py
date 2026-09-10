@@ -26,14 +26,16 @@ class ProductEmbeddingProvider:
         self._max_retry_attempts = max(1, settings.embedding_max_retry_attempts)
 
     # Gọi provider với input text đã bounded; retry chỉ áp dụng lỗi transient trước khi message vào DLQ.
-    async def generate(self, text: str) -> tuple[str, list[float]]:
+    async def generate(self, text: str, model: str | None = None) -> tuple[str, list[float]]:
+        # Dùng model từ job để vector luôn mang đúng modelVersion mà Recommendation đã yêu cầu.
+        requested_model = model or self._model
         last_error: Exception | None = None
         for attempt in range(1, self._max_retry_attempts + 1):
             try:
-                response = await self._client.embeddings.create(model=self._model, input=text)
+                response = await self._client.embeddings.create(model=requested_model, input=text)
                 if not response.data or not response.data[0].embedding:
                     raise ValueError("EMBEDDING_EMPTY")
-                return response.model or self._model, list(response.data[0].embedding)
+                return response.model or requested_model, list(response.data[0].embedding)
             except (APITimeoutError, OpenAIError, OSError, TimeoutError) as error:
                 # Các lỗi xác thực/request không thể tự hồi phục; không retry lãng phí và không giữ offset vô hạn.
                 permanent_errors = {

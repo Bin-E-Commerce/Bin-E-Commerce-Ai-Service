@@ -13,6 +13,7 @@ from starlette.responses import Response
 
 from app.bootstrap.lifespan import application_lifespan
 from app.core.errors import AppError
+from app.core.metrics import MetricsRegistry
 from app.modules.image_optimization.presentation.api.router import router as image_optimization_router
 from app.modules.product_content.presentation.api.router import router as product_content_router
 
@@ -30,6 +31,7 @@ def create_application() -> FastAPI:
     """Đăng ký error handler trước router để mọi AppError có cùng envelope."""
 
     application = FastAPI(title="Bin AI Service", version="0.2.0", lifespan=application_lifespan)
+    application.state.metrics = MetricsRegistry()
 
     # Map AppError thành payload ổn định và không trả exception detail nội bộ.
     @application.exception_handler(AppError)
@@ -59,6 +61,16 @@ def create_application() -> FastAPI:
         """Chỉ xác nhận API process đang nhận request."""
 
         return {"status": "ok", "service": "ai-service"}
+
+    # Endpoint chỉ trả metric vận hành có cardinality thấp, không trả raw prompt hoặc provider data.
+    @application.get("/metrics", include_in_schema=False)
+    async def metrics() -> Response:
+        """Xuất metrics cho Prometheus mà không gọi dependency bên ngoài."""
+
+        return Response(
+            content=application.state.metrics.render(),
+            media_type="text/plain; version=0.0.4",
+        )
 
     application.include_router(product_content_router)
     application.include_router(image_optimization_router)

@@ -68,7 +68,13 @@ async def run_worker() -> None:
                 event = _parse(message.value or b"")
                 data = event["data"]
                 assert isinstance(data, dict)
-                model, vector = await provider.generate(str(data["text"]))
+                requested_model = str(data["modelVersion"])
+                model, vector = await provider.generate(
+                    str(data["text"]),
+                    requested_model,
+                )
+                if model != requested_model:
+                    raise ValueError("EMBEDDING_MODEL_MISMATCH")
                 if len(vector) != settings.embedding_dimensions:
                     raise ValueError("EMBEDDING_DIMENSION_MISMATCH")
                 generated = {
@@ -83,7 +89,7 @@ async def run_worker() -> None:
                         "productId": data["productId"],
                         "contentHash": data["contentHash"],
                         "model": model,
-                        "modelVersion": str(data["modelVersion"]),
+                        "modelVersion": model,
                         "dimensions": len(vector),
                         "vector": vector,
                     },

@@ -5,9 +5,10 @@
   "description": "Python FastAPI AI service for Bin E-Commerce seller and customer workflows",
   "scripts": {
     "dev": "python -m uvicorn app.entrypoints.api:app --reload --host 127.0.0.1 --port 3009",
-    "worker": "python -m app.entrypoints.image_optimization_worker",
-    "embedding-worker": "python -m app.entrypoints.embedding_worker",
-    "outbox": "python -m app.entrypoints.outbox_relay",
+    "worker": "python -m app.entrypoints.workers.image_optimization_worker",
+    "embedding-worker": "python -m app.entrypoints.workers.embedding_worker",
+    "outbox": "python -m app.entrypoints.workers.outbox_relay",
+    "ranking-train": "python -m app.entrypoints.ranking_train",
     "start": "python -m uvicorn app.entrypoints.api:app --host 0.0.0.0 --port 3009",
     "test": "python -m pytest --cov=app --cov-report=term-missing -q",
     "test:fast": "python -m pytest -q",

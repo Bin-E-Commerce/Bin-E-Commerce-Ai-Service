@@ -22,6 +22,7 @@ dependencies = [
   "rembg>=2.0.67,<3.0",
   "onnxruntime>=1.18,<2.0",
   "alembic>=1.14,<2.0",
+  "lightgbm>=4.5,<5.0",
 ]
 
 [project.optional-dependencies]
@@ -81,6 +82,7 @@ type = "forbidden"
 source_modules = [
   "app.modules.image_optimization.domain",
   "app.modules.product_content.domain",
+  "app.modules.ranking.domain",
 ]
 forbidden_modules = ["fastapi", "pydantic", "sqlalchemy", "httpx", "openai", "aiokafka", "redis"]
 

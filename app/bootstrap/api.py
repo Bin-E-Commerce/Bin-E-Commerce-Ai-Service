@@ -16,6 +16,7 @@ from app.core.errors import AppError
 from app.core.metrics import MetricsRegistry
 from app.modules.image_optimization.presentation.api.router import router as image_optimization_router
 from app.modules.product_content.presentation.api.router import router as product_content_router
+from app.modules.ranking.presentation.api.router import router as ranking_router
 
 
 # Tạo correlation ID an toàn từ header Gateway hoặc UUID mới.
@@ -74,4 +75,5 @@ def create_application() -> FastAPI:
 
     application.include_router(product_content_router)
     application.include_router(image_optimization_router)
+    application.include_router(ranking_router)
     return application

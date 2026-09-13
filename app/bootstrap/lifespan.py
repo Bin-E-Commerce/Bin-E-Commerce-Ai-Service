@@ -14,9 +14,12 @@ from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
 from app.modules.image_optimization.infrastructure.publisher import InMemoryOptimizationEventPublisher
 from app.modules.image_optimization.infrastructure.repository import InMemoryImageOptimizationJobRepository
+from app.modules.product_content.application.ports import ProductDescriptionProvider, ProductNameProvider
 from app.modules.product_content.infrastructure.memory_cache import MemoryResultCache
 from app.modules.product_content.infrastructure.memory_rate_limiter import MemoryRateLimiter
 from app.modules.product_content.infrastructure.provider_factory import build_product_content_providers
+from app.modules.product_content.infrastructure.unavailable_provider import UnavailableProductContentProvider
+from app.modules.ranking.infrastructure.model_registry import build_ranking_model
 from app.shared.infrastructure.redis import RedisRateLimiter, RedisResultCache
 
 
@@ -54,9 +57,20 @@ async def application_lifespan(application: FastAPI) -> AsyncIterator[None]:
     limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
     application.state.http_client = httpx.AsyncClient(limits=limits, timeout=httpx.Timeout(30.0, connect=5.0))
     application.state.ai_runtime_mode = settings.ai_runtime_mode
-    name_provider, description_provider = build_product_content_providers(settings)
+    name_provider: ProductNameProvider
+    description_provider: ProductDescriptionProvider
+    if settings.ai_runtime_mode == "memory" and (
+        settings.openai_api_key is None or not settings.openai_api_key.get_secret_value()
+    ):
+        # Cho phép AI HTTP boot cho ranking/health; content endpoint sẽ trả lỗi cấu hình, không tạo dữ liệu giả.
+        unavailable_provider = UnavailableProductContentProvider()
+        name_provider = unavailable_provider
+        description_provider = unavailable_provider
+    else:
+        name_provider, description_provider = build_product_content_providers(settings)
     application.state.product_name_provider = name_provider
     application.state.product_description_provider = description_provider
+    application.state.ranking_model = build_ranking_model(settings)
 
     if settings.ai_runtime_mode == "memory":
         application.state.result_cache = MemoryResultCache()

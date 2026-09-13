@@ -85,7 +85,8 @@ class Settings(BaseSettings):
     embedding_dimensions: int = 1536
     embedding_timeout_seconds: float = 30.0
     embedding_max_retry_attempts: int = 5
-    embedding_worker_concurrency: int = 4
+    # Chỉ giữ generated vector ngắn hạn để Kafka redelivery không gọi provider lại; không biến Redis thành vector store.
+    embedding_result_cache_ttl_seconds: int = 600
     embedding_requested_topic: str = "recommendation.product-embedding.requested.v1"
     embedding_generated_topic: str = "recommendation.product-embedding.generated.v1"
     embedding_dlq_topic: str = "recommendation.product-embedding.dlq.v1"
@@ -93,6 +94,11 @@ class Settings(BaseSettings):
     media_service_url: str = "http://localhost:3004"
     product_service_url: str = "http://localhost:3008"
     internal_service_token: SecretStr | None = None
+    ranking_model_path: str | None = None
+    ranking_model_version: str = "ranking-fallback-v1"
+    ranking_max_items: int = 300
+    ranking_max_features: int = 64
+    ranking_expected_features: int = 9
 
     model_config = SettingsConfigDict(
         env_file=".env",

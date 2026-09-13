@@ -34,6 +34,8 @@ AI Service provides a dedicated backend for seller and customer AI features. The
 - Detects and removes sensitive data such as UUIDs, URLs, API keys, emails, phone numbers, and internal identifiers.
 - Applies request validation, seller rate limits, response caching, and provider timeouts.
 - Keeps OpenAI credentials on the server and never exposes them to the web application.
+- Provides an internal batch ranking endpoint for Recommendation Service.
+- Loads a versioned LightGBM artifact when configured and falls back to a deterministic scorer when it is unavailable.
 
 ## Technology
 
@@ -43,6 +45,7 @@ AI Service provides a dedicated backend for seller and customer AI features. The
 | HTTP API | FastAPI |
 | Validation | Pydantic v2 |
 | AI provider | OpenAI Vision model (`gpt-4.1-mini`) |
+| Ranking | LightGBM artifact with deterministic fallback |
 | Cache and rate limit | Typed in-memory adapters (Redis-ready) |
 | Testing | Pytest and pytest-asyncio |
 | Code quality | Ruff and Mypy |
@@ -73,11 +76,16 @@ app/
 │   ├── logging/                   # Logging setup and observability primitives
 │   └── security/                  # Gateway user context and permission checks
 └── modules/
-    └── product_content/
-        ├── domain/               # Framework-independent business rules
-        ├── application/          # Use cases and workflow orchestration
-        ├── infrastructure/      # OpenAI, Redis, cache and rate-limit adapters
-        └── presentation/         # FastAPI routes and Pydantic schemas
+    ├── product_content/          # Seller product content generation
+    ├── image_optimization/       # Seller image optimization workflow
+    ├── embeddings/               # Product embedding provider and worker adapter
+    └── ranking/                  # Batch prediction, model registry and offline training
+        ├── domain/               # Framework-independent ranking contracts
+        ├── application/          # Input validation and prediction use case
+        ├── infrastructure/      # LightGBM registry and training adapter
+        └── presentation/         # Internal FastAPI batch endpoint
+entrypoints/
+    └── workers/                  # Independent worker process wrappers
 tests/
 ├── unit/                         # Isolated domain and application tests
 └── integration/                  # HTTP and infrastructure boundary tests
@@ -94,6 +102,14 @@ POST /api/v1/seller/product-content/name-suggestions
 ```
 
 The API accepts category data, optional brand and seller input, and up to three HTTPS image URLs from the configured media CDN.
+
+Internal ranking endpoint:
+
+```text
+POST /api/v1/ranking/predict
+```
+
+It accepts only normalized feature vectors from Recommendation Service and requires `x-internal-service-token`. It never accepts catalog text, prompts, user identity, or raw embeddings.
 
 ## LLM Provider Architecture
 
@@ -124,6 +140,19 @@ After the virtual environment and dependencies are ready, the service can also b
 npm run dev
 ```
 
+Run the independent workers from `services/ai-service`:
+
+```powershell
+npm run embedding-worker
+npm run worker
+```
+
+Train a ranking artifact offline from JSONL rows containing `features` and `label`, then configure `RANKING_MODEL_PATH` before restarting the HTTP service:
+
+```powershell
+npm run ranking-train -- --input data/ranking.jsonl --output artifacts/ranking.txt --version ranking-lgbm-v1
+```
+
 The `npm` script only orchestrates the Python process; FastAPI still runs through Uvicorn. For a production-style process, use:
 
 ```cmd
@@ -151,4 +180,4 @@ The OpenAI Python SDK reads the key from the environment; the service never retu
 
 ## Current Status
 
-The first seller product-name suggestion use case is implemented. The service remains intentionally stateless and does not persist prompts, images, or product content.
+Seller product-content/image workflows and the Recommendation batch-ranking adapter are implemented. Ranking training remains an offline operation; if no artifact is configured, the API uses the deterministic fallback and reports its model version.

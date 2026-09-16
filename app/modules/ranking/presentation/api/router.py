@@ -8,7 +8,11 @@ from fastapi import APIRouter, Depends, Header, Request
 from app.core.config import Settings, get_settings
 from app.core.errors import AuthenticationError, ConfigurationError
 from app.modules.ranking.application.service import RankingPredictionService
-from app.modules.ranking.presentation.api.schemas import RankingPredictionResponse, RankingPredictRequest
+from app.modules.ranking.presentation.api.schemas import (
+    RankingPredictionResponse,
+    RankingPredictRequest,
+    RankingStatusResponse,
+)
 
 router = APIRouter(prefix="/api/v1/ranking", tags=["ranking"])
 
@@ -59,4 +63,25 @@ async def predict(
         request_id=result.request_id,
         model_version=result.model_version,
         predictions=[{"itemId": item.item_id, "score": item.score} for item in result.predictions],
+    )
+
+
+@router.get("/status", response_model=RankingStatusResponse, response_model_by_alias=True)
+async def status(
+    _: Annotated[None, Depends(require_internal_token)],
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> RankingStatusResponse:
+    """Trả model version và trạng thái fallback để Recommendation/Admin biết AI có thực sự sẵn sàng."""
+
+    model = getattr(request.app.state, "ranking_model", None)
+    if model is None:
+        raise ConfigurationError()
+    model_version = str(getattr(model, "model_version", "ranking-fallback-v1"))
+    fallback = model_version.startswith("ranking-fallback")
+    return RankingStatusResponse(
+        ready=not fallback,
+        fallback=fallback,
+        model_version=model_version,
+        feature_count=settings.ranking_expected_features,
     )

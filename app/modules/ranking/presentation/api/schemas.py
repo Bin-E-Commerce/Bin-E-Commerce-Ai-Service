@@ -31,3 +31,14 @@ class RankingPredictionResponse(BaseModel):
     request_id: str = Field(alias="requestId")
     model_version: str = Field(alias="modelVersion")
     predictions: list[dict[str, str | float]]
+
+
+class RankingStatusResponse(BaseModel):
+    """Trạng thái model ranking nội bộ, không tiết lộ đường dẫn artifact hoặc secret."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    ready: bool
+    fallback: bool
+    model_version: str = Field(alias="modelVersion")
+    feature_count: int = Field(alias="featureCount")

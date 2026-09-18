@@ -1,7 +1,7 @@
 """Kiểm tra prompt marketplace và ranh giới redact trước khi gửi dữ liệu tới LLM."""
 
 from app.modules.product_content.domain.models import ProductContext, ProductImage
-from app.modules.product_content.infrastructure.prompt_builder import build_description_prompt, build_prompt
+from app.modules.product_content.infrastructure.prompts.prompt_builder import build_description_prompt, build_prompt
 
 
 # Tạo context tối thiểu nhưng có thuộc tính kỹ thuật để kiểm tra prompt giữ đúng công thức ngành hàng.

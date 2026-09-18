@@ -10,7 +10,7 @@ from app.bootstrap.dependencies import get_current_user, get_product_description
 from app.core.config import Settings, get_settings
 from app.core.errors import InvalidInputError
 from app.core.security import UserContext
-from app.modules.product_content.application.commands import (
+from app.modules.product_content.application.contracts.commands import (
     DescriptionSuggestionCommand,
     ImageCommand,
     NameSuggestionCommand,

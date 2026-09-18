@@ -29,5 +29,15 @@ class MemoryRateLimiter:
                 timestamps.popleft()
             if len(timestamps) >= limit:
                 retry_after = max(1, int(window_seconds - (now - timestamps[0])))
-                raise RateLimitExceededError(retry_after)
+                raise RateLimitExceededError(retry_after, used=len(timestamps), limit=limit)
             timestamps.append(now)
+
+    async def get_usage(self, key: str, window_seconds: int) -> int:
+        """Tra so request con hieu luc trong cua so sliding-window."""
+
+        now = time.monotonic()
+        async with self._lock:
+            timestamps = self._requests[key]
+            while timestamps and timestamps[0] <= now - window_seconds:
+                timestamps.popleft()
+            return len(timestamps)

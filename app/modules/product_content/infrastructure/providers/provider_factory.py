@@ -3,7 +3,7 @@
 from app.core.config import Settings
 from app.core.errors import ConfigurationError
 from app.modules.product_content.application.ports import ProductDescriptionProvider, ProductNameProvider
-from app.modules.product_content.infrastructure.openai_provider import OpenAINameSuggestionProvider
+from app.modules.product_content.infrastructure.providers.openai_provider import OpenAINameSuggestionProvider
 
 
 # Tạo registry capability một lần ở lifespan; vendor branching không xuất hiện trong route/use case.

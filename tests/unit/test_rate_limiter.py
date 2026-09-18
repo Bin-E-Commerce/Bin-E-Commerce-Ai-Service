@@ -3,7 +3,7 @@
 import pytest
 
 from app.core.errors import RateLimitExceededError
-from app.modules.product_content.infrastructure.memory_rate_limiter import MemoryRateLimiter
+from app.modules.product_content.infrastructure.rate_limiting.memory_rate_limiter import MemoryRateLimiter
 
 
 @pytest.mark.asyncio

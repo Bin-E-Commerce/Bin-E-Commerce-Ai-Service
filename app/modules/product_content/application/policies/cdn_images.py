@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from urllib.parse import urlparse
 
 from app.core.errors import InvalidInputError
-from app.modules.product_content.application.commands import ImageCommand
+from app.modules.product_content.application.contracts.commands import ImageCommand
 
 
 # So khớp origin chính xác, không dùng startswith có thể bị host kẻ tấn công giả mạo.

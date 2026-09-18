@@ -4,15 +4,15 @@ import pytest
 
 from app.core.config import Settings
 from app.core.errors import InvalidProviderResponseError
-from app.modules.product_content.application.commands import (
+from app.modules.product_content.application.contracts.commands import (
     DescriptionSuggestionCommand,
     ImageCommand,
     NameSuggestionCommand,
 )
 from app.modules.product_content.application.use_cases import GenerateProductDescription, GenerateProductNames
 from app.modules.product_content.domain.models import GeneratedName
-from app.modules.product_content.infrastructure.memory_cache import MemoryResultCache
-from app.modules.product_content.infrastructure.memory_rate_limiter import MemoryRateLimiter
+from app.modules.product_content.infrastructure.cache.memory_cache import MemoryResultCache
+from app.modules.product_content.infrastructure.rate_limiting.memory_rate_limiter import MemoryRateLimiter
 
 
 # Fake provider trả output hợp lệ để test cache và normalize mà không phát sinh chi phí.

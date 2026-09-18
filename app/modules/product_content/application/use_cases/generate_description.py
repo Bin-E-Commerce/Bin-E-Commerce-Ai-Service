@@ -2,7 +2,7 @@
 
 from app.core.config import Settings
 from app.core.errors import InvalidInputError, InvalidProviderResponseError
-from app.modules.product_content.application.commands import DescriptionSuggestionCommand
+from app.modules.product_content.application.contracts.commands import DescriptionSuggestionCommand
 from app.modules.product_content.application.policies import validate_cdn_images
 from app.modules.product_content.application.ports import ProductDescriptionProvider, RateLimiter, ResultCache
 from app.modules.product_content.domain.models import DescriptionBatch

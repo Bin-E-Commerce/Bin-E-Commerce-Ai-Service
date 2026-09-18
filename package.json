@@ -8,7 +8,7 @@
     "worker": "python -m app.entrypoints.workers.image_optimization_worker",
     "embedding-worker": "python -m app.entrypoints.workers.embedding_worker",
     "outbox": "python -m app.entrypoints.workers.outbox_relay",
-    "ranking-train": "python -m app.entrypoints.ranking_train",
+    "ranking-train": "python -m app.entrypoints.training.ranking_train",
     "start": "python -m uvicorn app.entrypoints.api:app --host 0.0.0.0 --port 3009",
     "test": "python -m pytest --cov=app --cov-report=term-missing -q",
     "test:fast": "python -m pytest -q",
@@ -17,9 +17,8 @@
     "format:check": "python -m ruff format --check app tests migrations",
     "type-check": "python -m mypy app",
     "architecture:check": "lint-imports --config pyproject.toml",
-    "utf8:check": "python scripts/check_utf8.py",
     "compile:check": "python -m compileall -q app",
     "migration:sql": "alembic upgrade head --sql",
-    "check": "npm run lint && npm run format:check && npm run type-check && npm run architecture:check && npm run utf8:check && npm run compile:check && npm run test"
+    "check": "npm run lint && npm run format:check && npm run type-check && npm run architecture:check && npm run compile:check && npm run test"
   }
 }

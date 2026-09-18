@@ -16,7 +16,7 @@ from app.core.errors import (
     UpstreamConflictError,
     UpstreamRequestError,
 )
-from app.modules.image_optimization.application.events import ImageOptimizationRequestedEvent
+from app.modules.image_optimization.application.contracts.events import ImageOptimizationRequestedEvent
 from app.modules.image_optimization.application.ports import LifestyleBackgroundRequest
 from app.modules.image_optimization.application.prompts import build_lifestyle_prompt
 from app.modules.image_optimization.domain.enums import LifestyleBackgroundPreset

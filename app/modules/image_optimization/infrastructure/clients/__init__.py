@@ -6,5 +6,11 @@ Mỗi adapter phụ trách đúng một upstream capability và dùng chung conn
 from .media_assets import HttpMediaAssetClient
 from .product_media import HttpProductMediaClient
 from .product_owner import HttpProductOwnerClient
+from .recommendation_analytics import HttpProductImpactMetricsClient
 
-__all__ = ["HttpMediaAssetClient", "HttpProductMediaClient", "HttpProductOwnerClient"]
+__all__ = [
+    "HttpMediaAssetClient",
+    "HttpProductMediaClient",
+    "HttpProductOwnerClient",
+    "HttpProductImpactMetricsClient",
+]

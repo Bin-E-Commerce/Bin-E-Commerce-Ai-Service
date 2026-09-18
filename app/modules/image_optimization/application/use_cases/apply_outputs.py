@@ -5,15 +5,16 @@ Service chấp nhận. Retry dùng cùng job ID để downstream có thể xử 
 """
 
 from app.core.errors import OptimizationJobNotReadyError
-from app.modules.image_optimization.application.commands import ApplyOptimizationOutputsCommand
+from app.modules.image_optimization.application.contracts.commands import ApplyOptimizationOutputsCommand
 from app.modules.image_optimization.application.ports import (
     ImageOptimizationJobRepository,
     OptimizationEventPublisher,
     ProductMediaClient,
+    ProductOwnerClient,
 )
 from app.modules.image_optimization.domain.enums import ImageGenerationProfile, ImageOptimizationStatus
 from app.modules.image_optimization.domain.errors import InvalidJobTransitionError, InvalidOutputSelectionError
-from app.modules.image_optimization.domain.models import ImageOptimizationJob
+from app.modules.image_optimization.domain.models import GeneratedAsset, ImageOptimizationJob
 
 
 # Điều phối việc apply output đã xác minh sang Product Service.
@@ -29,6 +30,7 @@ class ApplyImageOptimizationOutputs:
         allow_memory_without_downstream: bool,
         publisher: OptimizationEventPublisher | None = None,
         finalize_before_apply: bool = False,
+        owner_client: ProductOwnerClient | None = None,
     ) -> None:
         """Chỉ cho phép thiếu downstream trong test/runtime memory được khai báo rõ."""
 
@@ -37,6 +39,7 @@ class ApplyImageOptimizationOutputs:
         self._allow_memory_without_downstream = allow_memory_without_downstream
         self._publisher = publisher
         self._finalize_before_apply = finalize_before_apply
+        self._owner_client = owner_client
 
     # Xác minh lifecycle, optimistic version và selected assets trước side effect.
     async def execute(self, command: ApplyOptimizationOutputsCommand) -> ImageOptimizationJob:
@@ -74,6 +77,9 @@ class ApplyImageOptimizationOutputs:
             await self._publisher.publish_requested(finalizing)
             return finalizing
 
+        # Chỉ mốc analytics khi source asset vẫn là cover tại thời điểm apply; preview không tạo session.
+        starts_impact_session = await self._resolve_impact_session_boundary(job, selected_outputs, command)
+
         if self._product_media_client is None:
             if not self._allow_memory_without_downstream:
                 raise OptimizationJobNotReadyError()
@@ -98,8 +104,32 @@ class ApplyImageOptimizationOutputs:
                     permissions=tuple(sorted(command.permissions)),
                 )
         try:
-            updated = job.transition(ImageOptimizationStatus.APPLIED).release_lease()
+            updated = (
+                job.transition(ImageOptimizationStatus.APPLIED)
+                .release_lease()
+                .mark_impact_session_boundary(starts_impact_session)
+            )
         except InvalidJobTransitionError as error:
             raise OptimizationJobNotReadyError() from error
         await self._repository.save(updated)
         return updated
+
+    # Xác định cover qua Product Service thay vì tin asset ID do browser gửi hoặc giá trị lúc tạo job.
+    async def _resolve_impact_session_boundary(
+        self,
+        job: ImageOptimizationJob,
+        selected_outputs: tuple[GeneratedAsset, ...],
+        command: ApplyOptimizationOutputsCommand,
+    ) -> bool:
+        """Trả true khi output đang apply thay ảnh đại diện hiện tại của product."""
+
+        if self._owner_client is None:
+            # Memory runtime không có Product Service để xác minh cover; giữ behavior cũ cho test/local.
+            return True
+        cover_asset_id = await self._owner_client.get_cover_asset_id(
+            command.seller_owner_id,
+            job.product_id,
+            command.permissions,
+            command.seller_email,
+        )
+        return any(output.source_asset_id == cover_asset_id for output in selected_outputs)

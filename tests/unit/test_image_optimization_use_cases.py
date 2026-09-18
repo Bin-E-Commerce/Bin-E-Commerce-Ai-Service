@@ -11,18 +11,18 @@ from uuid import UUID, uuid4
 import pytest
 
 from app.core.errors import IdempotencyKeyReusedError, InvalidInputError, OptimizationJobNotReadyError
-from app.modules.image_optimization.application.commands import (
+from app.modules.image_optimization.application.contracts.commands import (
     ApplyOptimizationOutputsCommand,
     CreateOptimizationJobsCommand,
 )
+from app.modules.image_optimization.application.orchestration.processor import ImageOptimizationJobProcessor
+from app.modules.image_optimization.application.orchestration.service import ImageOptimizationApplicationService
 from app.modules.image_optimization.application.ports import GeneratedImage
-from app.modules.image_optimization.application.processor import ImageOptimizationJobProcessor
-from app.modules.image_optimization.application.service import ImageOptimizationApplicationService
 from app.modules.image_optimization.application.use_cases.apply_outputs import ApplyImageOptimizationOutputs
 from app.modules.image_optimization.domain.enums import ImageOptimizationMode, ImageOptimizationStatus
 from app.modules.image_optimization.domain.models import GeneratedAsset, ImageOptimizationJob
-from app.modules.image_optimization.infrastructure.publisher import InMemoryOptimizationEventPublisher
-from app.modules.image_optimization.infrastructure.repository import InMemoryImageOptimizationJobRepository
+from app.modules.image_optimization.infrastructure.messaging.in_memory_publisher import InMemoryOptimizationEventPublisher
+from app.modules.image_optimization.infrastructure.persistence.in_memory_repository import InMemoryImageOptimizationJobRepository
 
 
 # Fake Product Service ghi lại đúng output mà use case đã xác minh.
@@ -57,6 +57,29 @@ class _ProductMediaClient:
 
         del seller_owner_id, product_id, job_id
         raise AssertionError("rollback_media must not be called")
+
+
+# Fake Product Service trả cover asset hiện tại để test ranh giới analytics tại thời điểm apply.
+class _ProductOwnerClient:
+    """Chỉ mô phỏng endpoint cover, không cần mô phỏng ownership các method khác."""
+
+    def __init__(self, cover_asset_id: UUID) -> None:
+        """Lưu cover ID mà test muốn Product Service trả về."""
+
+        self.cover_asset_id = cover_asset_id
+
+    # Trả cover tại thời điểm apply, không dùng giá trị seller chọn lúc tạo job.
+    async def get_cover_asset_id(
+        self,
+        seller_owner_id: UUID,
+        product_id: UUID,
+        permissions: frozenset[str] = frozenset(),
+        seller_email: str = "",
+    ) -> UUID:
+        """Mô phỏng cover asset được xác minh theo seller/product."""
+
+        del seller_owner_id, product_id, permissions, seller_email
+        return self.cover_asset_id
 
 
 # Tạo job REVIEW_REQUIRED có hai output cùng source để test selection.
@@ -109,6 +132,60 @@ async def test_apply_honors_selected_output_assets() -> None:
 
     assert updated.status is ImageOptimizationStatus.APPLIED
     assert client.applied_assets == (outputs[1],)
+
+
+# Apply output từ cover phải tạo mốc analytics mới, còn asset khác cover thì không reset baseline.
+@pytest.mark.asyncio
+async def test_apply_marks_impact_session_only_for_current_cover() -> None:
+    """Kiểm tra ranh giới analytics dùng cover Product Service tại thời điểm apply."""
+
+    owner_id = uuid4()
+    product_id = uuid4()
+    cover_repository = InMemoryImageOptimizationJobRepository()
+    cover_job, cover_outputs = _review_job(owner_id, product_id)
+    cover_client = _ProductMediaClient()
+    cover_use_case = ApplyImageOptimizationOutputs(
+        cover_repository,
+        cover_client,
+        allow_memory_without_downstream=False,
+        owner_client=_ProductOwnerClient(cover_outputs[0].source_asset_id),
+    )
+    await cover_repository.save(cover_job)
+
+    cover_applied = await cover_use_case.execute(
+        ApplyOptimizationOutputsCommand(
+            job_id=cover_job.job_id,
+            seller_owner_id=owner_id,
+            expected_product_updated_at=cover_job.expected_product_updated_at,
+            selected_asset_ids=(cover_outputs[0].asset_id,),
+            permissions=frozenset(),
+        )
+    )
+
+    assert cover_applied.starts_impact_session is True
+
+    secondary_repository = InMemoryImageOptimizationJobRepository()
+    secondary_job, secondary_outputs = _review_job(owner_id, product_id)
+    secondary_client = _ProductMediaClient()
+    secondary_use_case = ApplyImageOptimizationOutputs(
+        secondary_repository,
+        secondary_client,
+        allow_memory_without_downstream=False,
+        owner_client=_ProductOwnerClient(uuid4()),
+    )
+    await secondary_repository.save(secondary_job)
+
+    secondary_applied = await secondary_use_case.execute(
+        ApplyOptimizationOutputsCommand(
+            job_id=secondary_job.job_id,
+            seller_owner_id=owner_id,
+            expected_product_updated_at=secondary_job.expected_product_updated_at,
+            selected_asset_ids=(secondary_outputs[0].asset_id,),
+            permissions=frozenset(),
+        )
+    )
+
+    assert secondary_applied.starts_impact_session is False
 
 
 # Xác nhận asset không thuộc job bị chặn trước khi Product Service được gọi.

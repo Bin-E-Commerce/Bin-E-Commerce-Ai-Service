@@ -184,7 +184,8 @@ class SqlAlchemyImageOptimizationJobRepository:
     async def count_applied(self, seller_owner_id: UUID) -> int:
         """Đếm job APPLIED của seller bằng database."""
 
-        return await self.count_status(seller_owner_id, ImageOptimizationStatus.APPLIED)
+        jobs = await self.find_latest_lifecycle_jobs(seller_owner_id)
+        return sum(1 for job in jobs if job.status is ImageOptimizationStatus.APPLIED)
 
     # Dùng SQL COUNT cho metric theo status.
     async def count_status(self, seller_owner_id: UUID, status: ImageOptimizationStatus) -> int:
@@ -200,6 +201,48 @@ class SqlAlchemyImageOptimizationJobRepository:
         )
         return int((await self._session.execute(statement)).scalar_one())
 
+    # PostgreSQL trả lifecycle rows theo product/time để chỉ giữ một aggregate cuối cùng mỗi product.
+    async def find_latest_lifecycle_jobs(self, seller_owner_id: UUID) -> tuple[ImageOptimizationJob, ...]:
+        """Lấy job cuối cùng của seller gồm cả APPLIED và ROLLED_BACK."""
+
+        return await self._find_latest_jobs(seller_owner_id)
+
+    # Chỉ chọn lifecycle job đã đánh dấu bắt đầu phiên impact để apply ảnh phụ không thay mốc baseline.
+    async def find_latest_impact_jobs(self, seller_owner_id: UUID) -> tuple[ImageOptimizationJob, ...]:
+        """Lấy mốc impact mới nhất theo product, không bị thay thế bởi job ảnh phụ."""
+
+        return await self._find_latest_jobs(seller_owner_id, impact_only=True)
+
+    # Dùng chung truy vấn latest theo product cho dashboard lifecycle và dashboard analytics.
+    async def _find_latest_jobs(self, seller_owner_id: UUID, *, impact_only: bool = False) -> tuple[ImageOptimizationJob, ...]:
+        """Đọc các lifecycle row hợp lệ và giữ đúng một mốc cuối cùng cho mỗi product."""
+
+        filters = [
+            ImageOptimizationJobRecord.seller_owner_id == seller_owner_id,
+            ImageOptimizationJobRecord.status.in_(
+                [ImageOptimizationStatus.APPLIED.value, ImageOptimizationStatus.ROLLED_BACK.value]
+            ),
+        ]
+        if impact_only:
+            filters.append(ImageOptimizationJobRecord.starts_impact_session.is_(True))
+
+        statement = (
+            select(ImageOptimizationJobRecord)
+            .where(*filters)
+            .order_by(
+                ImageOptimizationJobRecord.product_id.asc(),
+                ImageOptimizationJobRecord.completed_at.desc().nullslast(),
+                ImageOptimizationJobRecord.created_at.desc(),
+            )
+        )
+        records = (await self._session.execute(statement)).scalars().all()
+        latest_by_product: dict[UUID, ImageOptimizationJob] = {}
+        for record in records:
+            if record.product_id in latest_by_product:
+                continue
+            latest_by_product[record.product_id] = await self._to_domain(record)
+        return tuple(latest_by_product.values())
+
     # Copy domain snapshot sang ORM record mà không đưa binary/prompt rõ vào database.
     def _copy_job(self, record: ImageOptimizationJobRecord, job: ImageOptimizationJob) -> None:
         """Mirror legacy output JSON tạm thời; output table vẫn là source of truth mới."""
@@ -208,6 +251,7 @@ class SqlAlchemyImageOptimizationJobRepository:
         record.source_asset_ids = [str(value) for value in job.source_asset_ids]
         record.requested_modes = [value.value for value in job.requested_modes]
         record.generation_profile = job.generation_profile.value
+        record.starts_impact_session = job.starts_impact_session
         record.selected_output_asset_ids = [str(value) for value in job.selected_output_asset_ids]
         record.generated_asset_ids = [str(value) for value in job.generated_asset_ids]
         record.generated_assets = [
@@ -308,6 +352,7 @@ class SqlAlchemyImageOptimizationJobRepository:
             source_asset_ids=tuple(UUID(value) for value in record.source_asset_ids),
             requested_modes=tuple(ImageOptimizationMode(value) for value in record.requested_modes),
             generation_profile=ImageGenerationProfile(record.generation_profile or "PREVIEW"),
+            starts_impact_session=bool(record.starts_impact_session),
             selected_output_asset_ids=tuple(UUID(value) for value in (record.selected_output_asset_ids or [])),
             idempotency_key=record.idempotency_key,
             request_hash=record.request_hash,

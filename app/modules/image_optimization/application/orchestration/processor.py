@@ -19,7 +19,7 @@ from app.modules.image_optimization.application.ports import (
     MediaAssetClient,
     WhiteBackgroundProviderPort,
 )
-from app.modules.image_optimization.application.provider_registry import ImageOptimizationProviderRegistry
+from app.modules.image_optimization.application.providers.registry import ImageOptimizationProviderRegistry
 from app.modules.image_optimization.domain.enums import (
     ImageGenerationProfile,
     ImageOptimizationMode,

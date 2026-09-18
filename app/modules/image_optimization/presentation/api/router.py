@@ -4,7 +4,7 @@ import re
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 
 from app.bootstrap.dependencies import (
     get_image_apply_user,
@@ -14,14 +14,16 @@ from app.bootstrap.dependencies import (
     get_image_user,
 )
 from app.core.security import UserContext
-from app.modules.image_optimization.application.commands import CreateOptimizationJobsCommand
-from app.modules.image_optimization.application.service import ImageOptimizationApplicationService
+from app.modules.image_optimization.application.contracts.commands import CreateOptimizationJobsCommand
+from app.modules.image_optimization.application.orchestration.service import ImageOptimizationApplicationService
 from app.modules.image_optimization.domain.errors import InvalidJobTransitionError
 from app.modules.image_optimization.presentation.api.schemas import (
     ApplyImageOptimizationRequest,
     CreateImageOptimizationRequest,
     CreateImageOptimizationResponse,
+    ImageOptimizationImpactOverviewResponse,
     ImageOptimizationOverviewResponse,
+    ImageOptimizationProductImpactsResponse,
     OptimizationJobResponse,
 )
 
@@ -121,6 +123,44 @@ async def get_image_optimization_overview(
 
     overview = await service.get_overview(UUID(user.user_id))
     return ImageOptimizationOverviewResponse.model_validate(overview)
+
+
+@router.get(
+    "/impact/overview",
+    response_model=ImageOptimizationImpactOverviewResponse,
+    response_model_by_alias=True,
+)
+async def get_image_optimization_impact_overview(
+    user: Annotated[UserContext, Depends(get_image_user)],
+    service: Annotated[ImageOptimizationApplicationService, Depends(get_image_optimization_service)],
+) -> ImageOptimizationImpactOverviewResponse:
+    """Trả KPI trước/sau của ảnh AI mà không thay đổi lifecycle job hiện tại."""
+
+    impact = await service.get_impact_overview(UUID(user.user_id))
+    return ImageOptimizationImpactOverviewResponse.model_validate(impact)
+
+
+@router.get(
+    "/impact/products",
+    response_model=ImageOptimizationProductImpactsResponse,
+    response_model_by_alias=True,
+)
+async def get_image_optimization_product_impacts(
+    product_ids: Annotated[str, Query(alias="productIds")],
+    user: Annotated[UserContext, Depends(get_image_user)],
+    service: Annotated[ImageOptimizationApplicationService, Depends(get_image_optimization_service)],
+) -> ImageOptimizationProductImpactsResponse:
+    """Trả impact các product được yêu cầu, nhưng ownership vẫn do repository AI xác minh."""
+
+    raw_ids = [value.strip() for value in product_ids.split(",") if value.strip()]
+    if not raw_ids or len(raw_ids) > 100:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="productIds must contain 1-100 items")
+    try:
+        ids = tuple(UUID(value) for value in raw_ids)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="productIds contains an invalid UUID") from error
+    impact = await service.get_product_impacts(UUID(user.user_id), ids)
+    return ImageOptimizationProductImpactsResponse.model_validate(impact)
 
 
 @router.post("/jobs/{job_id}/reject", response_model=OptimizationJobResponse, response_model_by_alias=True)

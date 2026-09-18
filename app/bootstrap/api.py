@@ -40,9 +40,12 @@ def create_application() -> FastAPI:
         """Giữ status/code/message/requestId nhất quán trên mọi module."""
 
         correlation_id = getattr(request.state, "request_id", _request_id(request))
+        content = {"code": error.code, "message": error.public_message, "requestId": correlation_id}
+        if error.details:
+            content["details"] = error.details
         return JSONResponse(
             status_code=error.status_code,
-            content={"code": error.code, "message": error.public_message, "requestId": correlation_id},
+            content=content,
             headers={**error.headers, "x-request-id": correlation_id},
         )
 

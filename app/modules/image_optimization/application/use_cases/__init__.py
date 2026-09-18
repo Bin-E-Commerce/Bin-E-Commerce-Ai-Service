@@ -5,6 +5,7 @@ Package này không chứa wiring FastAPI hoặc concrete infrastructure adapter
 
 from .apply_outputs import ApplyImageOptimizationOutputs
 from .create_batch import CreateImageOptimizationBatch
+from .get_impact import GetImageOptimizationImpact
 from .get_job import GetImageOptimizationJob
 from .get_overview import GetImageOptimizationOverview
 from .reject_job import RejectImageOptimizationJob
@@ -14,6 +15,7 @@ __all__ = [
     "ApplyImageOptimizationOutputs",
     "CreateImageOptimizationBatch",
     "GetImageOptimizationJob",
+    "GetImageOptimizationImpact",
     "GetImageOptimizationOverview",
     "RejectImageOptimizationJob",
     "RollbackImageOptimizationJob",

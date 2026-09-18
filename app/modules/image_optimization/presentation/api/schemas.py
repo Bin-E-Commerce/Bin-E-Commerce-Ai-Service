@@ -112,6 +112,17 @@ class CreateImageOptimizationResponse(BaseModel):
     jobs: list[OptimizationJobResponse]
 
 
+class ImageOptimizationUsageResponse(BaseModel):
+    """Quota snapshot for the current seller and current sliding window."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    enabled: bool
+    limit: int | None
+    used: int
+    remaining: int | None
+
+
 class ImageOptimizationOverviewResponse(BaseModel):
     """Metric dashboard lay tu persistence, khong dung so lieu placeholder."""
 
@@ -122,6 +133,73 @@ class ImageOptimizationOverviewResponse(BaseModel):
     total_sold: int | None = Field(default=None, alias="totalSold")
     pending_jobs: int = Field(alias="pendingJobs")
     failed_jobs: int = Field(alias="failedJobs")
+    ai_usage: ImageOptimizationUsageResponse = Field(alias="aiUsage")
+
+
+class ImageOptimizationImpactMetricResponse(BaseModel):
+    """Metric trung bình baseline so với ngày hậu tối ưu gần nhất."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    before: float
+    after: float
+    delta: float
+    change_percent: float | None = Field(default=None, alias="changePercent")
+
+
+class ImageOptimizationImpactDailyResponse(BaseModel):
+    """Một ngày hậu tối ưu, dùng để seller thấy trend mà không phải chờ đủ window."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    date: str
+    views: int
+    sales: int
+    has_data: bool = Field(alias="hasData")
+    views_change_percent: float | None = Field(default=None, alias="viewsChangePercent")
+    sales_change_percent: float | None = Field(default=None, alias="salesChangePercent")
+
+
+class ImageOptimizationImpactOverviewResponse(BaseModel):
+    """KPI baseline/ngày gần nhất toàn seller, không khẳng định quan hệ nhân quả."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    tracked_products: int = Field(alias="trackedProducts")
+    ready_products: int = Field(alias="readyProducts")
+    collecting_products: int = Field(alias="collectingProducts")
+    no_baseline_products: int = Field(alias="noBaselineProducts")
+    views: ImageOptimizationImpactMetricResponse
+    sales: ImageOptimizationImpactMetricResponse
+    status: str
+    window_days: int | None = Field(default=None, alias="windowDays")
+    baseline_days: int | None = Field(default=None, alias="baselineDays")
+
+
+class ImageOptimizationProductImpactResponse(BaseModel):
+    """Baseline và trend daily của một sản phẩm theo job apply mới nhất."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    product_id: UUID = Field(alias="productId")
+    job_id: UUID | None = Field(default=None, alias="jobId")
+    applied_at: datetime | None = Field(default=None, alias="appliedAt")
+    status: str
+    elapsed_seconds: int = Field(alias="elapsedSeconds")
+    days_collected: int = Field(alias="daysCollected")
+    window_days: int = Field(alias="windowDays")
+    baseline_days: int = Field(alias="baselineDays")
+    views: ImageOptimizationImpactMetricResponse | None = None
+    sales: ImageOptimizationImpactMetricResponse | None = None
+    daily: list[ImageOptimizationImpactDailyResponse] = Field(default_factory=list)
+
+
+class ImageOptimizationProductImpactsResponse(BaseModel):
+    """Danh sách impact đã lọc theo seller và product IDs hợp lệ."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    items: list[ImageOptimizationProductImpactResponse]
 
 
 class ApplyImageOptimizationRequest(BaseModel):

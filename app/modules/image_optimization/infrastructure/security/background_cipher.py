@@ -2,7 +2,7 @@
 
 from cryptography.fernet import Fernet, InvalidToken
 
-from app.core.errors import ConfigurationError, ProviderUnavailableError
+from app.core.errors import BackgroundConfigurationError, ProviderUnavailableError
 
 
 # Adapter Fernet dùng khóa từ cấu hình runtime để database chỉ nhận ciphertext có thể giải mã bởi worker cùng môi trường.
@@ -12,8 +12,12 @@ class FernetBackgroundDescriptionCipher:
     # Khởi tạo cipher từ secret đã inject; không nhận khóa từ HTTP request hay log lại giá trị này.
     def __init__(self, secret: str | None) -> None:
         if not secret:
-            raise ConfigurationError()
-        self._fernet = Fernet(secret.encode("utf-8"))
+            raise BackgroundConfigurationError()
+        try:
+            self._fernet = Fernet(secret.encode("utf-8"))
+        except (TypeError, ValueError) as error:
+            # Không để khóa sai định dạng biến thành lỗi 500 hoặc làm lộ chi tiết cryptography ra HTTP.
+            raise BackgroundConfigurationError() from error
 
     # Mã hóa trước persistence để raw mô tả không xuất hiện trong PostgreSQL hoặc event broker.
     def encrypt(self, value: str) -> str:

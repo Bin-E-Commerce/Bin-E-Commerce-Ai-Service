@@ -12,9 +12,10 @@ from fastapi import Depends, Header, Request
 from app.core.config import Settings, get_settings
 from app.core.errors import ConfigurationError
 from app.core.security import UserContext, build_user_context
-from app.modules.image_optimization.application.service import ImageOptimizationApplicationService
+from app.modules.image_optimization.application.orchestration.service import ImageOptimizationApplicationService
 from app.modules.image_optimization.infrastructure.clients import (
     HttpMediaAssetClient,
+    HttpProductImpactMetricsClient,
     HttpProductMediaClient,
     HttpProductOwnerClient,
 )
@@ -22,7 +23,7 @@ from app.modules.image_optimization.infrastructure.persistence.outbox_publisher 
 from app.modules.image_optimization.infrastructure.persistence.sqlalchemy_repository import (
     SqlAlchemyImageOptimizationJobRepository,
 )
-from app.modules.image_optimization.infrastructure.security import FernetBackgroundDescriptionCipher
+from app.modules.image_optimization.infrastructure.security.background_cipher import FernetBackgroundDescriptionCipher
 from app.modules.product_content.application.use_cases import GenerateProductDescription, GenerateProductNames
 
 SettingsDependency = Annotated[Settings, Depends(get_settings)]
@@ -89,11 +90,15 @@ async def get_image_optimization_service(request: Request) -> AsyncIterator[Imag
     shared_http_client = request.app.state.http_client
     owner_client = None if memory_mode else HttpProductOwnerClient(settings, shared_http_client)
     product_media_client = None if memory_mode else HttpProductMediaClient(settings, shared_http_client)
+    impact_metrics_client = None if memory_mode else HttpProductImpactMetricsClient(settings, shared_http_client)
     media_asset_client = None if memory_mode else HttpMediaAssetClient(settings, shared_http_client)
     cipher_secret = (
         settings.ai_image_background_encryption_key.get_secret_value() if settings.ai_image_background_encryption_key else None
     )
     background_cipher = FernetBackgroundDescriptionCipher(cipher_secret) if cipher_secret else None
+    image_rate_limiter = request.app.state.rate_limiter if settings.node_env == "production" else None
+    # Cả memory mode và service mode phải dùng cùng quota đã chuẩn hóa theo môi trường.
+    image_rate_limit_requests, image_rate_limit_window_seconds = settings.effective_ai_image_rate_limit
 
     if memory_mode:
         yield ImageOptimizationApplicationService(
@@ -101,10 +106,11 @@ async def get_image_optimization_service(request: Request) -> AsyncIterator[Imag
             publisher=request.app.state.image_optimization_publisher,
             owner_client=owner_client,
             product_media_client=product_media_client,
+            impact_metrics_client=impact_metrics_client,
             media_asset_client=media_asset_client,
-            rate_limiter=request.app.state.rate_limiter,
-            rate_limit_requests=settings.ai_image_rate_limit_requests,
-            rate_limit_window_seconds=settings.ai_image_rate_limit_window_seconds,
+            rate_limiter=image_rate_limiter,
+            rate_limit_requests=image_rate_limit_requests,
+            rate_limit_window_seconds=image_rate_limit_window_seconds,
             background_cipher=background_cipher,
             allow_memory_adapters=True,
         )
@@ -117,10 +123,13 @@ async def get_image_optimization_service(request: Request) -> AsyncIterator[Imag
             publisher=SqlAlchemyOptimizationOutboxPublisher(session),
             owner_client=owner_client,
             product_media_client=product_media_client,
+            # Production phải truyền analytics client để use case đọc
+            # view/sales từ Recommendation Service sau mốc apply thực tế.
+            impact_metrics_client=impact_metrics_client,
             media_asset_client=media_asset_client,
-            rate_limiter=request.app.state.rate_limiter,
-            rate_limit_requests=settings.ai_image_rate_limit_requests,
-            rate_limit_window_seconds=settings.ai_image_rate_limit_window_seconds,
+            rate_limiter=image_rate_limiter,
+            rate_limit_requests=image_rate_limit_requests,
+            rate_limit_window_seconds=image_rate_limit_window_seconds,
             background_cipher=background_cipher,
             allow_memory_adapters=False,
             finalize_before_apply=True,

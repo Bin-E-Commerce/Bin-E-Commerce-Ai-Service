@@ -106,6 +106,8 @@ class ImageOptimizationJob:
     background_description_ciphertext: str | None = None
     background_description_hash: str | None = None
     generation_profile: ImageGenerationProfile = ImageGenerationProfile.PREVIEW
+    # Chỉ true sau khi output được apply và asset nguồn là ảnh đại diện tại thời điểm apply.
+    starts_impact_session: bool = False
     selected_output_asset_ids: tuple[UUID, ...] = ()
     status: ImageOptimizationStatus = ImageOptimizationStatus.PENDING
     processing_stage: ImageOptimizationProcessingStage = ImageOptimizationProcessingStage.QUEUED
@@ -188,6 +190,16 @@ class ImageOptimizationJob:
             processing_stage=ImageOptimizationProcessingStage.QUEUED,
             generation_profile=ImageGenerationProfile.FINAL,
             selected_output_asset_ids=tuple(asset.asset_id for asset in selected),
+            version=self.version + 1,
+        )
+
+    # Ghi nhận mốc analytics sau khi Product Service đã apply thành công, không ghi từ preview.
+    def mark_impact_session_boundary(self, starts_impact_session: bool) -> "ImageOptimizationJob":
+        """Lưu quyết định asset cover để các job ảnh phụ không reset baseline sản phẩm."""
+
+        return replace(
+            self,
+            starts_impact_session=starts_impact_session,
             version=self.version + 1,
         )
 

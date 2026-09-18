@@ -23,8 +23,8 @@ redis.call('ZREMRANGEBYSCORE', key, 0, now - window)
 local count = redis.call('ZCARD', key)
 if count >= limit then
   local oldest = redis.call('ZRANGE', key, 0, 0, 'WITHSCORES')
-  if oldest[2] then return {0, math.max(1, window - (now - tonumber(oldest[2])))} end
-  return {0, window}
+  if oldest[2] then return {0, math.max(1, window - (now - tonumber(oldest[2]))), count} end
+  return {0, window, count}
 end
 redis.call('ZADD', key, now, member)
 redis.call('PEXPIRE', key, window)
@@ -64,4 +64,17 @@ class RedisRateLimiter:
         allowed = cast(int, result[0]) == 1
         if not allowed:
             retry_after_ms = cast(int, result[1])
-            raise RateLimitExceededError(max(1, (retry_after_ms + 999) // 1000))
+            used = cast(int, result[2]) if len(result) > 2 else limit
+            raise RateLimitExceededError(
+                max(1, (retry_after_ms + 999) // 1000),
+                used=used,
+                limit=limit,
+            )
+
+    async def get_usage(self, key: str, window_seconds: int) -> int:
+        """Tra so request con hieu luc trong cua so sliding-window cua Redis."""
+
+        now_ms = int(time.time() * 1000)
+        window_ms = max(1, window_seconds) * 1000
+        await self._client.zremrangebyscore(key, 0, now_ms - window_ms)
+        return int(await self._client.zcard(key))

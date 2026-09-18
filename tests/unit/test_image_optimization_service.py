@@ -6,11 +6,11 @@ from uuid import uuid4
 import pytest
 
 from app.core.errors import BackgroundConfigurationError
-from app.modules.image_optimization.application.commands import CreateOptimizationJobsCommand
-from app.modules.image_optimization.application.service import ImageOptimizationApplicationService
+from app.modules.image_optimization.application.contracts.commands import CreateOptimizationJobsCommand
+from app.modules.image_optimization.application.orchestration.service import ImageOptimizationApplicationService
 from app.modules.image_optimization.domain.enums import ImageOptimizationMode
-from app.modules.image_optimization.infrastructure.publisher import InMemoryOptimizationEventPublisher
-from app.modules.image_optimization.infrastructure.repository import InMemoryImageOptimizationJobRepository
+from app.modules.image_optimization.infrastructure.messaging.in_memory_publisher import InMemoryOptimizationEventPublisher
+from app.modules.image_optimization.infrastructure.persistence.in_memory_repository import InMemoryImageOptimizationJobRepository
 
 
 def _command(owner_id, product_id) -> CreateOptimizationJobsCommand:

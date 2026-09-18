@@ -4,7 +4,7 @@ from uuid import uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.modules.image_optimization.application.events import ImageOptimizationRequestedEvent
+from app.modules.image_optimization.application.contracts.events import ImageOptimizationRequestedEvent
 from app.modules.image_optimization.domain.models import ImageOptimizationJob
 from app.modules.image_optimization.infrastructure.persistence.models import ImageOptimizationOutboxRecord
 

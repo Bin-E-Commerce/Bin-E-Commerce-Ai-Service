@@ -109,14 +109,48 @@ class InMemoryImageOptimizationJobRepository:
     async def count_applied(self, seller_owner_id: UUID) -> int:
         """Phục vụ metric dashboard trong local/test."""
 
-        return sum(
-            1
-            for job in self._jobs.values()
-            if job.seller_owner_id == seller_owner_id and job.status is ImageOptimizationStatus.APPLIED
-        )
+        jobs = await self.find_latest_lifecycle_jobs(seller_owner_id)
+        return sum(1 for job in jobs if job.status is ImageOptimizationStatus.APPLIED)
 
     # Đếm trạng thái cụ thể cho dashboard local/test.
     async def count_status(self, seller_owner_id: UUID, status: ImageOptimizationStatus) -> int:
         """Không tạo số liệu giả khi repository rỗng."""
 
         return sum(1 for job in self._jobs.values() if job.seller_owner_id == seller_owner_id and job.status is status)
+
+    # Chọn lifecycle event cuối cùng theo product để rollback hoặc re-apply không làm sai KPI.
+    async def find_latest_lifecycle_jobs(self, seller_owner_id: UUID) -> tuple[ImageOptimizationJob, ...]:
+        """Trả tối đa một job cuối cùng cho mỗi sản phẩm thuộc seller hiện tại."""
+
+        latest_by_product: dict[UUID, ImageOptimizationJob] = {}
+        candidates = (
+            job
+            for job in self._jobs.values()
+            if job.seller_owner_id == seller_owner_id
+            and job.status in {ImageOptimizationStatus.APPLIED, ImageOptimizationStatus.ROLLED_BACK}
+        )
+        for job in candidates:
+            current = latest_by_product.get(job.product_id)
+            current_time = current.completed_at if current else None
+            if current is None or (job.completed_at or job.created_at) > (current_time or current.created_at):
+                latest_by_product[job.product_id] = job
+        return tuple(sorted(latest_by_product.values(), key=lambda job: str(job.product_id)))
+
+    # Chỉ dùng các job cover đã tạo phiên analytics; job ảnh phụ không được thay mốc hiện tại.
+    async def find_latest_impact_jobs(self, seller_owner_id: UUID) -> tuple[ImageOptimizationJob, ...]:
+        """Trả mốc impact mới nhất theo product trong runtime memory/test."""
+
+        jobs = tuple(
+            job
+            for job in self._jobs.values()
+            if job.seller_owner_id == seller_owner_id
+            and job.starts_impact_session
+            and job.status in {ImageOptimizationStatus.APPLIED, ImageOptimizationStatus.ROLLED_BACK}
+        )
+        latest_by_product: dict[UUID, ImageOptimizationJob] = {}
+        for job in jobs:
+            current = latest_by_product.get(job.product_id)
+            current_time = current.completed_at if current else None
+            if current is None or (job.completed_at or job.created_at) > (current_time or current.created_at):
+                latest_by_product[job.product_id] = job
+        return tuple(sorted(latest_by_product.values(), key=lambda job: str(job.product_id)))

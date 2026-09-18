@@ -7,7 +7,7 @@ logic nghiệp vụ đã nằm trong class use case có một hàm `execute` duy
 from datetime import datetime
 from uuid import UUID
 
-from app.modules.image_optimization.application.commands import (
+from app.modules.image_optimization.application.contracts.commands import (
     ApplyOptimizationOutputsCommand,
     CreateOptimizationJobsCommand,
 )
@@ -17,12 +17,18 @@ from app.modules.image_optimization.application.ports import (
     ImageOptimizationRateLimiter,
     MediaAssetClient,
     OptimizationEventPublisher,
+    ProductImpactMetricsClient,
     ProductMediaClient,
     ProductOwnerClient,
+)
+from app.modules.image_optimization.application.types.impact import (
+    ProductImpactOverviewPayload,
+    ProductImpactProductsPayload,
 )
 from app.modules.image_optimization.application.use_cases import (
     ApplyImageOptimizationOutputs,
     CreateImageOptimizationBatch,
+    GetImageOptimizationImpact,
     GetImageOptimizationJob,
     GetImageOptimizationOverview,
     RejectImageOptimizationJob,
@@ -47,6 +53,7 @@ class ImageOptimizationApplicationService:
         rate_limit_requests: int = 3,
         rate_limit_window_seconds: int = 3600,
         background_cipher: BackgroundDescriptionCipher | None = None,
+        impact_metrics_client: ProductImpactMetricsClient | None = None,
         *,
         allow_memory_adapters: bool = True,
         finalize_before_apply: bool = False,
@@ -64,13 +71,23 @@ class ImageOptimizationApplicationService:
             allow_unverified_memory_sources=allow_memory_adapters,
         )
         self._get = GetImageOptimizationJob(repository)
-        self._overview = GetImageOptimizationOverview(repository)
+        self._overview = GetImageOptimizationOverview(
+            repository,
+            rate_limiter=rate_limiter,
+            rate_limit_requests=rate_limit_requests,
+            rate_limit_window_seconds=rate_limit_window_seconds,
+        )
+        self._impact = GetImageOptimizationImpact(
+            repository,
+            impact_metrics_client,
+        )
         self._apply = ApplyImageOptimizationOutputs(
             repository,
             product_media_client,
             allow_memory_without_downstream=allow_memory_adapters,
             publisher=publisher,
             finalize_before_apply=finalize_before_apply,
+            owner_client=owner_client,
         )
         self._reject = RejectImageOptimizationJob(repository, media_asset_client)
         self._rollback = RollbackImageOptimizationJob(repository, product_media_client)
@@ -88,10 +105,26 @@ class ImageOptimizationApplicationService:
         return await self._get.execute(job_id, seller_owner_id)
 
     # Chuyển query overview sang use case query độc lập.
-    async def get_overview(self, seller_owner_id: UUID) -> dict[str, int | None]:
+    async def get_overview(self, seller_owner_id: UUID) -> dict[str, object]:
         """Để repository tự thực hiện COUNT hiệu quả."""
 
         return await self._overview.execute(seller_owner_id)
+
+    # Đọc impact qua use case riêng để dashboard analytics không làm thay đổi lifecycle apply hiện tại.
+    async def get_impact_overview(self, seller_owner_id: UUID) -> ProductImpactOverviewPayload:
+        """Trả KPI trước/sau của toàn bộ sản phẩm thuộc seller."""
+
+        return await self._impact.overview(seller_owner_id)
+
+    # Đọc impact của các product đang hiển thị, vẫn để use case xác minh ownership qua job repository.
+    async def get_product_impacts(
+        self,
+        seller_owner_id: UUID,
+        product_ids: tuple[UUID, ...],
+    ) -> ProductImpactProductsPayload:
+        """Trả metric chi tiết theo danh sách product ID đã được giới hạn."""
+
+        return await self._impact.products(seller_owner_id, product_ids)
 
     # Chuyển reject sang use case lifecycle độc lập.
     async def reject_job(self, job_id: UUID, seller_owner_id: UUID) -> ImageOptimizationJob:

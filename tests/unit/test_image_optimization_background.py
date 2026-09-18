@@ -3,8 +3,11 @@
 from uuid import uuid4
 
 import pytest
+from cryptography.fernet import Fernet
 from pydantic import ValidationError
 
+from app.core.errors import BackgroundConfigurationError
+from app.modules.image_optimization.infrastructure.security.background_cipher import FernetBackgroundDescriptionCipher
 from app.modules.image_optimization.presentation.api.schemas import CreateImageOptimizationRequest
 
 
@@ -80,3 +83,24 @@ def test_normalizes_whitespace_only_background_description_to_empty() -> None:
 
     assert target.background is not None
     assert target.background.description is None
+
+
+# Từ chối key không đúng chuẩn Fernet để API trả lỗi cấu hình ổn định thay vì lỗi 500 từ thư viện mã hóa.
+def test_rejects_invalid_background_encryption_key() -> None:
+    """Khóa không hợp lệ phải được map thành lỗi cấu hình public-safe."""
+
+    with pytest.raises(BackgroundConfigurationError):
+        FernetBackgroundDescriptionCipher("not-a-fernet-key")
+
+
+# Xác nhận adapter vẫn mã hóa/giải mã bình thường với key được sinh đúng chuẩn để worker và API dùng chung được.
+def test_round_trips_background_description_with_valid_key() -> None:
+    """Ciphertext không chứa plaintext và giải mã trả lại đúng mô tả ban đầu."""
+
+    cipher = FernetBackgroundDescriptionCipher(Fernet.generate_key().decode("utf-8"))
+    plaintext = "Phòng khách sáng với cây xanh."
+
+    encrypted = cipher.encrypt(plaintext)
+
+    assert plaintext not in encrypted
+    assert cipher.decrypt(encrypted) == plaintext

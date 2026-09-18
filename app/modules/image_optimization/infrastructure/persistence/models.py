@@ -7,7 +7,7 @@ signed URL. Legacy JSON columns được giữ tạm để đọc dữ liệu c�
 from datetime import datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -49,6 +49,7 @@ class ImageOptimizationJobRecord(Base):
     source_asset_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
     requested_modes: Mapped[list[str]] = mapped_column(JSONB, default=list)
     generation_profile: Mapped[str] = mapped_column(String(16), default="PREVIEW")
+    starts_impact_session: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     selected_output_asset_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)
     # Hai cột dưới là legacy compatibility; code mới đọc output table làm source of truth.
     generated_asset_ids: Mapped[list[str]] = mapped_column(JSONB, default=list)

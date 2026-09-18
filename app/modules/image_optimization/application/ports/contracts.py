@@ -1,7 +1,7 @@
 """Application ports cho persistence, messaging, service client và image providers."""
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -30,6 +30,48 @@ class GeneratedImage:
     content_type: str
     file_name: str
     metadata: ProviderExecutionMetadata | None = None
+
+
+# Khoảng thời gian được tạo từ mốc apply để đọc analytics theo cùng một hợp đồng giữa các service.
+@dataclass(frozen=True)
+class ProductImpactComparison:
+    """Định danh phép so sánh trước/sau bằng timestamp UTC chính xác đến giây."""
+
+    key: str
+    product_id: UUID
+    before_from: datetime | None
+    before_to: datetime
+    after_from: datetime
+    after_to: datetime
+
+
+# Một bucket daily sau apply, dùng để backend tạo trend mà không phụ thuộc frontend tính toán.
+@dataclass(frozen=True)
+class ProductImpactDailyMetrics:
+    """Số liệu view/sales của một bucket ngày sau khi apply ảnh AI."""
+
+    bucket_date: date
+    views: int
+    sales: int
+    has_data: bool
+
+
+# Aggregate theo ngày do Recommendation Service trả về; không chứa dữ liệu người mua hoặc thông tin nhạy cảm.
+@dataclass(frozen=True)
+class ProductImpactMetrics:
+    """Kết quả baseline trung bình, ngày mới nhất và trend daily."""
+
+    key: str
+    product_id: UUID
+    before_views: int
+    before_sales: int
+    before_days_with_data: int
+    before_average_views: float
+    before_average_sales: float
+    after_views: int
+    after_sales: int
+    after_days_with_data: int
+    daily: tuple[ProductImpactDailyMetrics, ...]
 
 
 # Chỉ mang dữ liệu cần thiết vào provider ngay trước lời gọi trả phí; không ghi object này vào log, Kafka hay database.
@@ -81,12 +123,31 @@ class ImageOptimizationJobRepository(Protocol):
     async def count_status(self, seller_owner_id: UUID, status: ImageOptimizationStatus) -> int:
         """Dem job theo state de dashboard khong dung so lieu gia."""
 
+    async def find_latest_lifecycle_jobs(self, seller_owner_id: UUID) -> tuple[ImageOptimizationJob, ...]:
+        """Lay lifecycle cuoi cung theo product, gom APPLIED va ROLLED_BACK."""
+
+    async def find_latest_impact_jobs(self, seller_owner_id: UUID) -> tuple[ImageOptimizationJob, ...]:
+        """Lay job APPLIED/ROLLED_BACK gan impact session, bo qua cac lan apply anh phu."""
+
+
+class ProductImpactMetricsClient(Protocol):
+    """Port doc aggregate analytics tu Recommendation Service qua mang noi bo."""
+
+    async def compare(
+        self,
+        comparisons: tuple[ProductImpactComparison, ...],
+    ) -> tuple[ProductImpactMetrics, ...]:
+        """Doc view/sales theo cac cua so thoi gian duoc gioi han san."""
+
 
 class ImageOptimizationRateLimiter(Protocol):
     """Port sliding-window gioi han chi phi theo seller."""
 
     async def check(self, key: str, limit: int, window_seconds: int) -> None:
         """Raise loi 429 khi seller vuot quota."""
+
+    async def get_usage(self, key: str, window_seconds: int) -> int:
+        """Tra so request dang nam trong sliding window ma khong tieu them quota."""
 
 
 # Mã hóa mô tả seller trước persistence và chỉ giải mã trong worker ngay trước khi gọi provider.

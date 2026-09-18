@@ -11,7 +11,8 @@ from datetime import datetime
 from uuid import UUID
 
 from app.core.errors import BackgroundConfigurationError, IdempotencyKeyReusedError, InvalidInputError
-from app.modules.image_optimization.application.commands import CreateOptimizationJobsCommand
+from app.modules.image_optimization.application.contracts.commands import CreateOptimizationJobsCommand
+from app.modules.image_optimization.application.policies.quota import image_optimization_rate_limit_key
 from app.modules.image_optimization.application.ports import (
     BackgroundDescriptionCipher,
     ImageOptimizationJobRepository,
@@ -91,7 +92,7 @@ class CreateImageOptimizationBatch:
             raise InvalidInputError()
         if self._rate_limiter is not None:
             await self._rate_limiter.check(
-                key=f"ai:image-optimization:{command.seller_owner_id}",
+                key=image_optimization_rate_limit_key(command.seller_owner_id),
                 limit=self._rate_limit_requests,
                 window_seconds=self._rate_limit_window_seconds,
             )

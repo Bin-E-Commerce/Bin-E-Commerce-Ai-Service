@@ -9,6 +9,7 @@ class AppError(Exception):
     code = "AI_SERVICE_ERROR"
     public_message = "The AI service could not complete the request."
     headers: dict[str, str] = {}
+    details: dict[str, object] = {}
 
 
 # Lỗi này chặn request trước khi gọi LLM nếu Gateway không gửi đủ identity hoặc permission.
@@ -148,8 +149,14 @@ class RateLimitExceededError(AppError):
     public_message = "Too many AI requests. Please try again later."
 
     # Gắn Retry-After để client biết thời điểm hợp lý tiếp theo thay vì retry liên tục.
-    def __init__(self, retry_after_seconds: int) -> None:
+    def __init__(self, retry_after_seconds: int, *, used: int | None = None, limit: int | None = None) -> None:
         self.headers = {"Retry-After": str(retry_after_seconds)}
+        self.details = {
+            "used": used,
+            "limit": limit,
+            "remaining": max(0, limit - used) if used is not None and limit is not None else None,
+            "retryAfterSeconds": retry_after_seconds,
+        }
         super().__init__(self.public_message)
 
 

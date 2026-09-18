@@ -5,12 +5,12 @@ from uuid import UUID, uuid4
 
 import pytest
 
-from app.modules.image_optimization.application.events import ImageOptimizationRequestedEvent
+from app.modules.image_optimization.application.contracts.events import ImageOptimizationRequestedEvent
+from app.modules.image_optimization.application.orchestration.processor import ImageOptimizationJobProcessor
 from app.modules.image_optimization.application.ports import GeneratedImage
-from app.modules.image_optimization.application.processor import ImageOptimizationJobProcessor
 from app.modules.image_optimization.domain.enums import ImageGenerationProfile, ImageOptimizationMode, ImageOptimizationStatus
 from app.modules.image_optimization.domain.models import GeneratedAsset, ImageOptimizationJob
-from app.modules.image_optimization.infrastructure.repository import InMemoryImageOptimizationJobRepository
+from app.modules.image_optimization.infrastructure.persistence.in_memory_repository import InMemoryImageOptimizationJobRepository
 
 
 class _Media:

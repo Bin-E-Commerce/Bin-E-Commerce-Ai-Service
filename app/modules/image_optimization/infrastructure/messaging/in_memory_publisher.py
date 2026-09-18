@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from app.modules.image_optimization.application.events import ImageOptimizationRequestedEvent
+from app.modules.image_optimization.application.contracts.events import ImageOptimizationRequestedEvent
 from app.modules.image_optimization.domain.models import ImageOptimizationJob
 
 

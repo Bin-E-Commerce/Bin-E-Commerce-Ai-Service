@@ -27,8 +27,8 @@ class Settings(BaseSettings):
     # Preview lifestyle phải đủ chi tiết để seller đánh giá việc giữ nguyên sản phẩm; ảnh final vẫn tạo 1024x1024.
     ai_image_preview_size: Literal["256x256", "512x512", "1024x1024", "1536x1024", "1024x1536"] = "1024x1024"
     ai_image_preview_format: Literal["jpeg", "png", "webp"] = "jpeg"
-    ai_image_preview_compression: int = 75
-    ai_image_preview_max_dimension: int = 1024
+    ai_image_preview_compression: int = 65
+    ai_image_preview_max_dimension: int = 768
     ai_image_preview_input_fidelity: Literal["low", "high"] = "high"
     # Lifestyle cần đủ thời gian cho provider hoàn tất ảnh; timeout không phải SLA hiển thị cho seller.
     ai_image_preview_timeout_seconds: float = 120.0
@@ -93,6 +93,7 @@ class Settings(BaseSettings):
     embedding_consumer_group: str = "ai-service.embedding-worker.v1"
     media_service_url: str = "http://localhost:3004"
     product_service_url: str = "http://localhost:3008"
+    recommendation_service_url: str = "http://localhost:3006"
     internal_service_token: SecretStr | None = None
     ranking_model_path: str | None = None
     ranking_model_version: str = "ranking-fallback-v1"
@@ -106,6 +107,15 @@ class Settings(BaseSettings):
         case_sensitive=False,
         extra="ignore",
     )
+
+    # Production luôn dùng quota cố định để biến môi trường cũ không thể vô tình nới giới hạn.
+    @property
+    def effective_ai_image_rate_limit(self) -> tuple[int, int]:
+        """Trả về số lượt và cửa sổ quota hiệu lực cho image optimization."""
+
+        if self.node_env == "production":
+            return 2, 86_400
+        return self.ai_image_rate_limit_requests, self.ai_image_rate_limit_window_seconds
 
 
 # Cache object Settings để dependency dùng chung config nhưng không tạo client hay gọi mạng khi import.

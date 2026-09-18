@@ -18,15 +18,15 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.bootstrap.lifespan import validate_runtime_settings
 from app.core.config import get_settings
 from app.core.logging import configure_logging
-from app.modules.image_optimization.application.events import ImageOptimizationRequestedEvent
-from app.modules.image_optimization.application.processor import ImageOptimizationJobProcessor
+from app.modules.image_optimization.application.contracts.events import ImageOptimizationRequestedEvent
+from app.modules.image_optimization.application.orchestration.processor import ImageOptimizationJobProcessor
 from app.modules.image_optimization.infrastructure.clients import HttpMediaAssetClient
 from app.modules.image_optimization.infrastructure.persistence.sqlalchemy_repository import (
     SqlAlchemyImageOptimizationJobRepository,
 )
 from app.modules.image_optimization.infrastructure.providers.openai_image import OpenAILifestyleImageProvider
 from app.modules.image_optimization.infrastructure.providers.white_background import WhiteBackgroundProvider
-from app.modules.image_optimization.infrastructure.security import FernetBackgroundDescriptionCipher
+from app.modules.image_optimization.infrastructure.security.background_cipher import FernetBackgroundDescriptionCipher
 
 logger = logging.getLogger(__name__)
 
@@ -118,6 +118,8 @@ async def run_worker() -> None:
     validate_runtime_settings(settings)
     if settings.database_url is None:
         raise RuntimeError("DATABASE_URL is required for image optimization worker")
+    cipher_secret = settings.ai_image_background_encryption_key
+    cipher = FernetBackgroundDescriptionCipher(cipher_secret.get_secret_value()) if cipher_secret else None
     engine = create_async_engine(settings.database_url, pool_pre_ping=True)
     session_factory = async_sessionmaker(engine, expire_on_commit=False)
     consumer = AIOKafkaConsumer(
@@ -136,8 +138,6 @@ async def run_worker() -> None:
         )
         await white_provider.warm_up()
         lifestyle_provider = OpenAILifestyleImageProvider(settings, http_client)
-        cipher_secret = settings.ai_image_background_encryption_key
-        cipher = FernetBackgroundDescriptionCipher(cipher_secret.get_secret_value()) if cipher_secret else None
         worker_id = f"image-worker-{uuid4()}"
 
         # Factory nhận repository theo message, còn provider/client pool được dùng chung suốt process.

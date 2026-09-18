@@ -45,7 +45,10 @@ class LightGbmRankingModel:
 
     # Gọi Booster theo batch và clamp output để response không phát score bất thường do artifact lỗi.
     def predict(self, rows: Sequence[Sequence[float]]) -> list[float]:
-        values = self._booster.predict(rows)
+        # Chuyển batch sang ndarray để tương thích ổn định với LightGBM và không phụ thuộc kiểu list từ HTTP layer.
+        import numpy as np
+
+        values = self._booster.predict(np.asarray(rows, dtype=np.float32))
         return [max(0.0, min(1.0, float(value))) for value in values]
 
 

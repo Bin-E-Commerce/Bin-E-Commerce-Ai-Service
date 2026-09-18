@@ -12,14 +12,14 @@ from fastapi import FastAPI
 
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
-from app.modules.image_optimization.infrastructure.publisher import InMemoryOptimizationEventPublisher
-from app.modules.image_optimization.infrastructure.repository import InMemoryImageOptimizationJobRepository
+from app.modules.image_optimization.infrastructure.messaging.in_memory_publisher import InMemoryOptimizationEventPublisher
+from app.modules.image_optimization.infrastructure.persistence.in_memory_repository import InMemoryImageOptimizationJobRepository
 from app.modules.product_content.application.ports import ProductDescriptionProvider, ProductNameProvider
-from app.modules.product_content.infrastructure.memory_cache import MemoryResultCache
-from app.modules.product_content.infrastructure.memory_rate_limiter import MemoryRateLimiter
-from app.modules.product_content.infrastructure.provider_factory import build_product_content_providers
-from app.modules.product_content.infrastructure.unavailable_provider import UnavailableProductContentProvider
-from app.modules.ranking.infrastructure.model_registry import build_ranking_model
+from app.modules.product_content.infrastructure.cache.memory_cache import MemoryResultCache
+from app.modules.product_content.infrastructure.providers.provider_factory import build_product_content_providers
+from app.modules.product_content.infrastructure.providers.unavailable_provider import UnavailableProductContentProvider
+from app.modules.product_content.infrastructure.rate_limiting.memory_rate_limiter import MemoryRateLimiter
+from app.modules.ranking.infrastructure.registry.model_registry import build_ranking_model
 from app.shared.infrastructure.redis import RedisRateLimiter, RedisResultCache
 
 

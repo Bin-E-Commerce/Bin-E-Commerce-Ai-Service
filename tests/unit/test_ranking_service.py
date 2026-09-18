@@ -4,7 +4,7 @@ import pytest
 
 from app.core.errors.exceptions import InvalidInputError
 from app.modules.ranking.application.service import RankingPredictionService
-from app.modules.ranking.infrastructure.model_registry import FallbackRankingModel
+from app.modules.ranking.infrastructure.registry.model_registry import FallbackRankingModel
 
 
 class FakeRankingModel:

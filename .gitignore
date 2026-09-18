@@ -13,3 +13,4 @@ dist/
 build/
 *.egg-info/
 .import_linter_cache
+artifacts/

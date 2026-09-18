@@ -1,0 +1,23 @@
+# This service uses its own build context. Exclude local-only files, caches and
+# secrets before Docker sends the context to the builder.
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.import_linter_cache/
+.coverage
+coverage.xml
+dist/
+build/
+*.egg-info/
+tests/
+scripts/
+artifacts/
+.git/
+.gitignore
+README.md

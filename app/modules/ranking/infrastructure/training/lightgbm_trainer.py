@@ -1,4 +1,9 @@
-"""Huấn luyện LightGBM từ feature/label JSONL với split theo thời gian đơn giản và tái lập được."""
+"""Huấn luyện artifact LightGBM từ dataset JSONL ở ngoài request path.
+
+Module này chỉ thuộc infrastructure: đọc dữ liệu huấn luyện, kiểm tra contract
+9 feature, tạo model và ghi artifact/metadata để runtime load có kiểm soát.
+Nó không được import vào FastAPI request path và không chứa dữ liệu người dùng.
+"""
 
 import argparse
 import json
@@ -10,6 +15,7 @@ from typing import Any
 from app.core.config import get_settings
 
 
+# Đọc và kiểm tra từng dòng dữ liệu trước khi chuyển dataset sang LightGBM.
 def _read_rows(path: Path, expected_features: int) -> tuple[list[list[float]], list[float]]:
     """Đọc dataset bounded, loại bỏ dòng malformed trước khi đưa vào trainer."""
 
@@ -46,18 +52,23 @@ def _read_rows(path: Path, expected_features: int) -> tuple[list[list[float]], l
     return features, labels
 
 
+# Huấn luyện offline, kiểm tra số feature và ghi model cùng metadata version.
 def train_model(input_path: Path, output_path: Path, version: str, expected_features: int) -> dict[str, Any]:
     """Train model offline, save artifact plus metadata để runtime load có kiểm soát."""
 
     try:
         import lightgbm as lgb
+        import numpy as np
     except ImportError as error:
-        raise RuntimeError("LIGHTGBM_NOT_INSTALLED") from error
+        raise RuntimeError("LIGHTGBM_OR_NUMPY_NOT_INSTALLED") from error
 
     features, labels = _read_rows(input_path, expected_features)
     split = max(10, min(len(features) - 10, int(len(features) * 0.8)))
-    train_features, valid_features = features[:split], features[split:]
-    train_labels, valid_labels = labels[:split], labels[split:]
+    # LightGBM yêu cầu ma trận số dạng ndarray; chuyển đổi một lần để trainer và artifact dùng cùng contract.
+    train_features = np.asarray(features[:split], dtype=np.float32)
+    valid_features = np.asarray(features[split:], dtype=np.float32)
+    train_labels = np.asarray(labels[:split], dtype=np.float32)
+    valid_labels = np.asarray(labels[split:], dtype=np.float32)
     train_set = lgb.Dataset(train_features, label=train_labels, free_raw_data=False)
     valid_set = lgb.Dataset(valid_features, label=valid_labels, reference=train_set, free_raw_data=False)
     booster = lgb.train(
@@ -66,6 +77,9 @@ def train_model(input_path: Path, output_path: Path, version: str, expected_feat
             "metric": "binary_logloss",
             "learning_rate": 0.05,
             "num_leaves": 31,
+            # Dataset demo nhỏ nên cần leaf tối thiểu thấp; production phải chọn lại theo dữ liệu thực tế.
+            "min_data_in_leaf": 3,
+            "min_sum_hessian_in_leaf": 1e-3,
             "feature_fraction": 0.9,
             "bagging_fraction": 0.9,
             "bagging_freq": 1,
@@ -88,8 +102,8 @@ def train_model(input_path: Path, output_path: Path, version: str, expected_feat
     metadata = {
         "modelVersion": version,
         "featureCount": expected_features,
-        "trainRows": len(train_features),
-        "validationRows": len(valid_features),
+        "trainRows": int(train_features.shape[0]),
+        "validationRows": int(valid_features.shape[0]),
         "bestIteration": booster.best_iteration,
         "objective": "binary",
     }
@@ -100,6 +114,7 @@ def train_model(input_path: Path, output_path: Path, version: str, expected_feat
     return metadata
 
 
+# Nhận tham số CLI để chạy training job độc lập với tiến trình FastAPI.
 def main(argv: Iterable[str] | None = None) -> None:
     """CLI offline cho data scientist, không được import vào FastAPI request path."""
 

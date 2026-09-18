@@ -138,7 +138,7 @@ curl http://localhost:3009/api/v1/ranking/status `
   -H "x-internal-service-token: replace-with-local-token"
 ```
 
-When no artifact is configured, the safe status is equivalent to:
+When the artifact is missing or incompatible, the safe status is equivalent to:
 
 ```json
 {
@@ -168,7 +168,45 @@ curl -X POST http://localhost:3009/api/v1/ranking/predict `
   }'
 ```
 
-The response includes `requestId`, `modelVersion`, and one prediction per item. With no LightGBM artifact, `modelVersion` is `ranking-fallback-v1`.
+The response includes `requestId`, `modelVersion`, and one prediction per item. With no compatible LightGBM artifact, `modelVersion` is `ranking-fallback-v1`.
+
+### Run the included demo model
+
+The repository includes a small synthetic dataset at
+`data/ranking.demo.jsonl` so the LightGBM path can be demonstrated without
+exposing real customer data. It is not a production-trained model.
+
+The nine values must keep this order:
+
+| Position | Feature |
+| ---: | --- |
+| 1 | Profile affinity |
+| 2 | Session context |
+| 3 | Semantic similarity |
+| 4 | Co-behavior |
+| 5 | Popularity |
+| 6 | Freshness |
+| 7 | Quality |
+| 8 | Exploration |
+| 9 | Negative penalty |
+
+Build the image and run the offline training job from `services/ai-service`:
+
+```powershell
+docker build -t bin-ecommerce/ai-service:ranking-demo .
+docker run --rm `
+  -v "${PWD}/data:/app/data:ro" `
+  -v "${PWD}/artifacts:/app/artifacts" `
+  bin-ecommerce/ai-service:ranking-demo `
+  python -m app.entrypoints.training.ranking_train `
+  --input /app/data/ranking.demo.jsonl `
+  --output /app/artifacts/ranking.txt `
+  --version ranking-lgbm-demo-v1
+```
+
+Set `RANKING_MODEL_PATH` to `artifacts/ranking.txt` for a local process or
+`/app/artifacts/ranking.txt` in Docker. The runtime loads the artifact only
+when its feature count is nine; otherwise it uses the safe fallback.
 
 ## 6. Install
 
@@ -211,7 +249,7 @@ The project also contains `requirements.txt` for the existing pip workflow:
 3. For seller content, configure `MEDIA_PUBLIC_CDN_URL` and the seller permission forwarded by API Gateway.
 4. For image optimization, start PostgreSQL/Redis/Kafka and the `worker` plus `outbox` processes.
 5. For embeddings, start `embedding-worker` and verify the requested/generated/DLQ topics.
-6. For ranking rollout, train or provide a compatible nine-feature model, verify `/ranking/status`, and let Recommendation Service control traffic allocation.
+6. For ranking rollout, train or provide a compatible nine-feature model, configure `RANKING_MODEL_PATH`, and verify `/ranking/status`.
 
 Do not call OpenAI directly from the web client and do not treat a generated preview as an automatically applied product mutation.
 
@@ -395,12 +433,14 @@ services/ai-service/
 │   │   ├── embeddings/              # Embedding provider and Kafka worker
 │   │   └── ranking/                 # Prediction, model registry and training
 │   ├── shared/infrastructure/      # Redis cache and rate-limit adapters
-│   └── entrypoints/                # API, workers, outbox and training commands
+│   └── entrypoints/                # Process entrypoints grouped by runtime role
+│       ├── api.py                  # FastAPI HTTP process
+│       ├── workers/                # Kafka workers and outbox relay
+│       └── training/               # Offline model-training commands
 ├── migrations/                     # Alembic schema history
 ├── tests/
 │   ├── unit/                        # Domain/use-case/provider tests
 │   └── integration/                 # HTTP route and infrastructure boundaries
-├── scripts/check_utf8.py            # Source encoding check
 ├── pyproject.toml                   # Dependencies and quality gates
 ├── package.json                     # Python commands exposed to workspace scripts
 ├── Dockerfile
@@ -414,7 +454,7 @@ services/ai-service/
 | --- | --- |
 | `app/bootstrap/api.py` | Registers routers, health, metrics, request IDs, and the stable error envelope |
 | `app/bootstrap/lifespan.py` | Fails fast on incomplete service configuration and composes memory/service adapters |
-| `app/modules/ranking/infrastructure/model_registry.py` | Loads LightGBM only when the artifact is compatible; otherwise returns deterministic fallback |
+| `app/modules/ranking/infrastructure/registry/model_registry.py` | Loads LightGBM only when the artifact is compatible; otherwise returns deterministic fallback |
 | `app/modules/image_optimization/domain/models.py` | Protects job lifecycle, leases, source/output mapping, and apply/rollback invariants |
 | `app/modules/image_optimization/infrastructure/persistence/outbox_relay.py` | Claims, retries, publishes, and dead-letters image events without holding database locks during network calls |
 | `app/modules/product_content/presentation/api/router.py` | Enforces CDN host validation and maps safe seller responses |
@@ -450,7 +490,7 @@ npm run start
 npm run worker
 npm run embedding-worker
 npm run outbox
-npm run ranking-train -- --input data/ranking.jsonl --output artifacts/ranking.txt --version ranking-lgbm-v1
+  npm run ranking-train -- --input data/ranking.demo.jsonl --output artifacts/ranking.txt --version ranking-lgbm-demo-v1
 ```
 
 The ranking training input is JSONL with `features` and `label` fields. Training is offline; it is not imported into the FastAPI request path.
@@ -462,7 +502,6 @@ npm run lint
 npm run format:check
 npm run type-check
 npm run architecture:check
-npm run utf8:check
 npm run compile:check
 npm run test
 npm run check
@@ -513,7 +552,7 @@ No. Browser traffic goes through API Gateway, which supplies trusted user contex
 
 ### What happens when the ranking model is unavailable?
 
-`model_registry.py` returns the deterministic `ranking-fallback-v1` implementation. Recommendation Service can therefore continue using its Standard/Hybrid baseline without recording a false ML result.
+`registry/model_registry.py` returns the deterministic `ranking-fallback-v1` implementation. Recommendation Service can therefore continue using its Standard/Hybrid baseline without recording a false ML result.
 
 ### Are generated images applied automatically?
 

@@ -34,8 +34,6 @@ class MetricsRegistry:
         for (name, labels), value in self._counters.items():
             label_text = ""
             if labels:
-                label_text = "{" + ",".join(
-                    f'{key}="{value.replace(chr(34), chr(92) + chr(34))}"' for key, value in labels
-                ) + "}"
+                label_text = "{" + ",".join(f'{key}="{value.replace(chr(34), chr(92) + chr(34))}"' for key, value in labels) + "}"
             lines.append(f"{name}{label_text} {value}")
         return "\n".join(lines) + "\n"

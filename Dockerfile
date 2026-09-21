@@ -35,6 +35,17 @@ COPY pyproject.toml ./
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
     && pip install --no-cache-dir .
 
+# pip, setuptools và wheel chỉ phục vụ quá trình build; ứng dụng runtime không
+# gọi trực tiếp các công cụ này. Xóa chúng trước khi copy virtualenv sang image
+# cuối để giảm attack surface và không đưa lỗ hổng của tooling vào production.
+RUN rm -rf \
+    "$VIRTUAL_ENV/lib/python3.12/site-packages/pip" \
+    "$VIRTUAL_ENV/lib/python3.12/site-packages/pip-"* \
+    "$VIRTUAL_ENV/lib/python3.12/site-packages/setuptools" \
+    "$VIRTUAL_ENV/lib/python3.12/site-packages/setuptools-"* \
+    "$VIRTUAL_ENV/lib/python3.12/site-packages/wheel" \
+    "$VIRTUAL_ENV/lib/python3.12/site-packages/wheel-"*
+
 FROM python:3.12-slim AS runtime
 
 # Dùng cùng các biến môi trường với builder để lệnh `python` và các console

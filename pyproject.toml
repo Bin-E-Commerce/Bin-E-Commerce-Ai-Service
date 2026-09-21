@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=75"]
+requires = ["setuptools>=78.1.1"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -18,7 +18,7 @@ dependencies = [
   "asyncpg>=0.30,<1.0",
   "aiokafka>=0.12,<1.0",
   "redis>=6.0,<7.0",
-  "Pillow>=11.0,<12.0",
+  "Pillow>=12.3.0,<13.0",
   "rembg>=2.0.67,<3.0",
   "onnxruntime>=1.18,<2.0",
   # Fernet is used by the image-optimization security boundary at runtime.

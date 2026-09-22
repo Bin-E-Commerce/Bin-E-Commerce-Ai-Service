@@ -4,7 +4,7 @@ File này chỉ lưu metric vận hành có label bounded và xuất Prometheus 
 File không lưu secret, user identity, prompt, raw catalog text hoặc vector.
 """
 
-import resource
+import os
 from collections.abc import Mapping
 from time import monotonic
 from typing import TypedDict
@@ -33,7 +33,9 @@ def _resident_memory_bytes() -> int:
     try:
         with open("/proc/self/statm", encoding="utf-8") as statm:
             resident_pages = int(statm.read().split()[1])
-        return resident_pages * int(resource.getpagesize())  # type: ignore[attr-defined]
+        sysconf = getattr(os, "sysconf", None)
+        page_size = int(sysconf("SC_PAGE_SIZE")) if callable(sysconf) else 4096
+        return resident_pages * page_size
     except (FileNotFoundError, IndexError, ValueError, OSError):
         return 0
 

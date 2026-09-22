@@ -4,7 +4,9 @@ File chỉ compose router, middleware và stable error envelope; không chứa b
 rule, provider call hoặc database query.
 """
 
+import logging
 from collections.abc import Awaitable, Callable
+from time import monotonic
 from uuid import uuid4
 
 from fastapi import FastAPI, Request
@@ -17,6 +19,8 @@ from app.core.metrics import MetricsRegistry
 from app.modules.image_optimization.presentation.api.router import router as image_optimization_router
 from app.modules.product_content.presentation.api.router import router as product_content_router
 from app.modules.ranking.presentation.api.router import router as ranking_router
+
+logger = logging.getLogger("app.http")
 
 
 # Tạo correlation ID an toàn từ header Gateway hoặc UUID mới.
@@ -55,7 +59,39 @@ def create_application() -> FastAPI:
         """Không log payload hoặc user identity; middleware chỉ quản lý correlation ID."""
 
         request.state.request_id = _request_id(request)
+        started_at = monotonic()
+        application.state.metrics.add_gauge("http_requests_in_flight", 1, {"service": "ai-service"})
         response = await call_next(request)
+        duration_seconds = monotonic() - started_at
+        route = request.scope.get("route")
+        route_name = getattr(route, "path", request.url.path).split("?", 1)[0][:160]
+        status_class = f"{response.status_code // 100}xx"
+        application.state.metrics.increment(
+            "http_requests_total",
+            {"service": "ai-service", "method": request.method, "route": route_name, "status_class": status_class},
+        )
+        application.state.metrics.increment(
+            "http_responses_total",
+            {"service": "ai-service", "method": request.method, "route": route_name, "status_class": status_class},
+        )
+        application.state.metrics.observe_histogram(
+            "http_request_duration_seconds",
+            duration_seconds,
+            {"service": "ai-service", "method": request.method, "route": route_name, "status_class": status_class},
+        )
+        application.state.metrics.add_gauge("http_requests_in_flight", -1, {"service": "ai-service"})
+        if response.status_code >= 400 or duration_seconds >= 0.5:
+            # Chỉ ghi request lỗi/chậm để Loki không bị ngập bởi health probe vài giây một lần.
+            logger.warning(
+                "http.request.completed",
+                extra={
+                    "request_id": request.state.request_id,
+                    "method": request.method,
+                    "route": route_name,
+                    "status_code": response.status_code,
+                    "duration_ms": round(duration_seconds * 1000),
+                },
+            )
         response.headers["x-request-id"] = request.state.request_id
         return response
 

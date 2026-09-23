@@ -7,6 +7,7 @@ không phục hồi được đi DLQ; exception hạ tầng tạm thời giữ n
 import asyncio
 import json
 import logging
+import os
 from collections.abc import Mapping
 from uuid import uuid4
 
@@ -18,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.bootstrap.lifespan import validate_runtime_settings
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.core.worker_health import clear_worker_health, mark_worker_healthy
 from app.modules.image_optimization.application.contracts.events import ImageOptimizationRequestedEvent
 from app.modules.image_optimization.application.orchestration.processor import ImageOptimizationJobProcessor
 from app.modules.image_optimization.infrastructure.clients import HttpMediaAssetClient
@@ -113,6 +115,9 @@ async def _process_partition(
 async def run_worker() -> None:
     """Fail-fast khi production dependency thiếu và đóng toàn bộ pool khi shutdown."""
 
+    health_file = os.getenv("WORKER_HEALTH_FILE", "/tmp/bin-ecommerce-ai-image-worker.health")
+    # Xóa marker cũ trước khi validate để container restart không được Ready nhờ heartbeat của process trước.
+    clear_worker_health(health_file)
     configure_logging()
     settings = get_settings()
     validate_runtime_settings(settings)
@@ -159,11 +164,15 @@ async def run_worker() -> None:
         await producer.start()
         await consumer.start()
         try:
+            mark_worker_healthy(health_file)
             while True:
                 records = await consumer.getmany(
                     timeout_ms=settings.ai_image_kafka_poll_timeout_ms,
                     max_records=settings.ai_image_worker_concurrency,
                 )
+                # Chỉ cập nhật sau khi Kafka poll hoàn tất; process sống nhưng mất broker
+                # sẽ trở thành NotReady khi marker quá cũ.
+                mark_worker_healthy(health_file)
                 await asyncio.gather(
                     *(
                         _process_partition(
@@ -180,6 +189,7 @@ async def run_worker() -> None:
                     )
                 )
         finally:
+            clear_worker_health(health_file)
             await consumer.stop()
             await producer.stop()
     await engine.dispose()

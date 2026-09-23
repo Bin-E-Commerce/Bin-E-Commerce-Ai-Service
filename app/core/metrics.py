@@ -22,8 +22,7 @@ def _render_labels(labels: tuple[tuple[str, str], ...]) -> str:
     if not labels:
         return ""
     rendered = ",".join(
-        f'{key}="{value.replace(chr(92), chr(92) + chr(92)).replace(chr(34), chr(92) + chr(34))}"'
-        for key, value in labels
+        f'{key}="{value.replace(chr(92), chr(92) + chr(92)).replace(chr(34), chr(92) + chr(34))}"' for key, value in labels
     )
     return "{" + rendered + "}"
 
@@ -54,8 +53,18 @@ class MetricsRegistry:
     # Tăng counter với label đã lọc; caller không thể vô tình đưa actor/product identifier vào metric.
     def increment(self, name: str, labels: Mapping[str, str] | None = None, amount: int = 1) -> None:
         allowed = {
-            "service", "method", "route", "status", "status_class", "source",
-            "surface", "variant", "error_code", "topic", "consumer", "dependency",
+            "service",
+            "method",
+            "route",
+            "status",
+            "status_class",
+            "source",
+            "surface",
+            "variant",
+            "error_code",
+            "topic",
+            "consumer",
+            "dependency",
         }
         safe_labels = tuple(sorted((key, value) for key, value in (labels or {}).items() if key in allowed))
         key = (name, safe_labels)
@@ -88,8 +97,7 @@ class MetricsRegistry:
         sample["sum"] = float(sample["sum"]) + safe_value
         sample["count"] = int(sample["count"]) + 1
         sample["counts"] = [
-            count + (1 if safe_value <= bucket else 0)
-            for bucket, count in zip(sample["buckets"], sample["counts"], strict=True)
+            count + (1 if safe_value <= bucket else 0) for bucket, count in zip(sample["buckets"], sample["counts"], strict=True)
         ]
 
     # Xuất snapshot Prometheus mà không expose dữ liệu request, provider response hoặc identity.

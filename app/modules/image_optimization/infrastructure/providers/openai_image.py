@@ -109,6 +109,10 @@ class OpenAILifestyleImageProvider:
                     n=1,
                     size=profile["size"],
                     quality=profile["quality"],
+                    # Gửi format và mức nén ngay cho provider để preview trả payload nhỏ;
+                    # tránh nhận PNG lớn rồi mới nén lại trong worker.
+                    output_format=profile["format"],
+                    output_compression=int(profile["compression"]),
                     timeout=float(profile["timeout"]),
                 )
             items = result.data or []

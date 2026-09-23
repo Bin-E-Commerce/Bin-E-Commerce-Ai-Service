@@ -24,7 +24,7 @@ def _source_png() -> bytes:
 
 @pytest.mark.asyncio
 async def test_lifestyle_request_uses_conservative_edit_contract(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Request chỉ dùng tham số được API edit hỗ trợ ổn định và convert PNG về JPEG local."""
+    """Request truyền profile output để provider trả payload nhỏ ngay từ đầu."""
 
     calls: list[dict[str, object]] = []
     output = io.BytesIO()
@@ -45,7 +45,11 @@ async def test_lifestyle_request_uses_conservative_edit_contract(monkeypatch: py
 
     monkeypatch.setattr(openai_image, "AsyncOpenAI", FakeClient)
     provider = openai_image.OpenAILifestyleImageProvider(
-        Settings(openai_api_key=SecretStr("test-key"), ai_image_preview_format="jpeg")
+        Settings(
+            openai_api_key=SecretStr("test-key"),
+            ai_image_preview_format="jpeg",
+            ai_image_preview_compression=65,
+        )
     )
 
     result = await provider.generate_lifestyle_background(
@@ -62,9 +66,8 @@ async def test_lifestyle_request_uses_conservative_edit_contract(monkeypatch: py
     assert calls[0]["model"] == "gpt-image-2"
     assert calls[0]["size"] == "1024x1024"
     assert calls[0]["quality"] == "low"
-    assert "input_fidelity" not in calls[0]
-    assert "output_format" not in calls[0]
-    assert "output_compression" not in calls[0]
+    assert calls[0]["output_format"] == "jpeg"
+    assert calls[0]["output_compression"] == 65
     assert "background" not in calls[0]
     assert result.content_type == "image/jpeg"
     assert result.file_name == "lifestyle.jpeg"

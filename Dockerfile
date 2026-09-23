@@ -7,11 +7,14 @@
 
 FROM python:3.12-slim AS builder
 
+ARG PIP_INDEX_URL=https://pypi.org/simple
+
 # Giữ hành vi Python ổn định trong container và ngăn pip tạo cache. Cache pip
 # không giúp process lúc runtime nhưng sẽ làm tăng kích thước các layer của image.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_INDEX_URL=$PIP_INDEX_URL \
     VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
@@ -32,13 +35,19 @@ COPY pyproject.toml ./
 # Chỉ cài dependency runtime được khai báo trong pyproject.toml. Nhóm tùy chọn
 # `dev` được loại khỏi image: pytest, mypy, Ruff và import-linter chỉ dành cho
 # local/CI, không cần thiết trong image chạy production.
-RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
-    && pip install --no-cache-dir .
+# KhÃ´ng nÃ¢ng pip theo latest trong má»i build; resolver thay Ä‘á»•i theo thÆ°á»ng lÃ m image
+# khÃ´ng táº¡i lÃ¡i Ä‘Æ°á»£c. OpenAI Ä‘Ã£ Ä‘Æ°á»£c pin trong pyproject, cÃ²n retry/timeout
+# giÃºp build tá»± phÃ¡c há»“i khi PyPI tráº£ metadata cháº­m trong Compose build song song.
+RUN python -m pip install --no-cache-dir --prefer-binary \
+        --retries=5 --timeout=120 .
 
 # pip, setuptools và wheel chỉ phục vụ quá trình build; ứng dụng runtime không
 # gọi trực tiếp các công cụ này. Xóa chúng trước khi copy virtualenv sang image
 # cuối để giảm attack surface và không đưa lỗ hổng của tooling vào production.
 RUN rm -rf \
+    "$VIRTUAL_ENV/bin/pip"* \
+    "$VIRTUAL_ENV/bin/wheel" \
+    "$VIRTUAL_ENV/bin/easy_install"* \
     "$VIRTUAL_ENV/lib/python3.12/site-packages/pip" \
     "$VIRTUAL_ENV/lib/python3.12/site-packages/pip-"* \
     "$VIRTUAL_ENV/lib/python3.12/site-packages/setuptools" \

@@ -63,7 +63,8 @@ def train_model(input_path: Path, output_path: Path, version: str, expected_feat
         raise RuntimeError("LIGHTGBM_OR_NUMPY_NOT_INSTALLED") from error
 
     features, labels = _read_rows(input_path, expected_features)
-    split = max(10, min(len(features) - 10, int(len(features) * 0.8)))
+    # Logic split train/validation: ít nhất 10 rows cho validation, ít nhất 20 rows cho train, còn lại chia 80/20.
+    split = max(10, min(len(features) - 10, int(len(features) * 0.8))) 
     # LightGBM yêu cầu ma trận số dạng ndarray; chuyển đổi một lần để trainer và artifact dùng cùng contract.
     train_features = np.asarray(features[:split], dtype=np.float32)
     valid_features = np.asarray(features[split:], dtype=np.float32)

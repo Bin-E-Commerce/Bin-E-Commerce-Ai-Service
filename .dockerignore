@@ -18,6 +18,11 @@ build/
 tests/
 scripts/
 artifacts/
+!artifacts/
+!artifacts/synthetic/
+!artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt
+!artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt.meta.json
+!artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt.metrics.json
 .git/
 .gitignore
 README.md

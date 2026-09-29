@@ -93,6 +93,11 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --chown=aiworker:aiworker app ./app
 COPY --chown=aiworker:aiworker migrations ./migrations
 COPY --chown=aiworker:aiworker alembic.ini ./alembic.ini
+# Đóng gói model synthetic đã train cùng image để mọi pod mới dùng đúng một
+# artifact bất biến; không phụ thuộc vào file được chép thủ công trên pod.
+COPY --chown=aiworker:aiworker artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt /app/artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt
+COPY --chown=aiworker:aiworker artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt.meta.json /app/artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt.meta.json
+COPY --chown=aiworker:aiworker artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt.metrics.json /app/artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt.metrics.json
 
 USER aiworker
 

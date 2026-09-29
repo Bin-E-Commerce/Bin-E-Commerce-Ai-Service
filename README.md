@@ -170,11 +170,7 @@ curl -X POST http://localhost:3009/api/v1/ranking/predict `
 
 The response includes `requestId`, `modelVersion`, and one prediction per item. With no compatible LightGBM artifact, `modelVersion` is `ranking-fallback-v1`.
 
-### Run the included demo model
-
-The repository includes a small synthetic dataset at
-`data/ranking.demo.jsonl` so the LightGBM path can be demonstrated without
-exposing real customer data. It is not a production-trained model.
+### Ranking feature contract
 
 The nine values must keep this order:
 
@@ -190,23 +186,41 @@ The nine values must keep this order:
 | 8 | Exploration |
 | 9 | Negative penalty |
 
-Build the image and run the offline training job from `services/ai-service`:
+### Train from the synthetic behavior simulator
+
+Recommendation Service có CLI offline để đọc catalog thật, tạo persona/session
+giả và sinh dataset hành vi. Simulator không tạo user trong PostgreSQL, không
+publish Kafka và không gọi Tiki/OpenAI. Dữ liệu synthetic chỉ dùng để kiểm tra
+pipeline và chứng minh integration; không được trình bày như hành vi người dùng
+thật.
 
 ```powershell
-docker build -t bin-ecommerce/ai-service:ranking-demo .
-docker run --rm `
-  -v "${PWD}/data:/app/data:ro" `
-  -v "${PWD}/artifacts:/app/artifacts" `
-  bin-ecommerce/ai-service:ranking-demo `
-  python -m app.entrypoints.training.ranking_train `
-  --input /app/data/ranking.demo.jsonl `
-  --output /app/artifacts/ranking.txt `
-  --version ranking-lgbm-demo-v1
+cd services/recommendation-service
+npm run ranking-simulate -- `
+  --users 20 `
+  --sessions 50 `
+  --events 500 `
+  --seed 42 `
+  --output ../../services/ai-service/data/ranking-synthetic/pilot-20x50
 ```
 
-Set `RANKING_MODEL_PATH` to `artifacts/ranking.txt` for a local process or
-`/app/artifacts/ranking.txt` in Docker. The runtime loads the artifact only
-when its feature count is nine; otherwise it uses the safe fallback.
+Sau khi kiểm tra `manifest.json`, `metrics.json` và các file JSONL, train model
+bằng split theo session đã được simulator tạo sẵn:
+
+```powershell
+cd services/ai-service
+.\\.venv\\Scripts\\python.exe -m app.entrypoints.training.ranking_train `
+  --dataset-dir data/ranking-synthetic/pilot-20x50 `
+  --output artifacts/synthetic/ranking-lgbm-synthetic-v1.txt `
+  --version ranking-lgbm-synthetic-v1 `
+  --seed 42
+```
+
+Trainer ghi artifact mới, file metadata và sidecar metric cạnh artifact. Dataset
+input có thể được mount read-only; `metrics.json` trong dataset vẫn là data-quality
+report của simulator. Model synthetic được lưu trong `artifacts/synthetic/`. Metadata
+bao gồm dataset/feature schema version, số dòng từng split, positive rate,
+best iteration, LogLoss, AUC, NDCG@5, NDCG@10 và MRR.
 
 ## 6. Install
 
@@ -490,10 +504,12 @@ npm run start
 npm run worker
 npm run embedding-worker
 npm run outbox
-  npm run ranking-train -- --input data/ranking.demo.jsonl --output artifacts/ranking.txt --version ranking-lgbm-demo-v1
+npm run ranking-train -- --dataset-dir data/ranking-synthetic/pilot-1000u-5000s-seed42 --output artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt --version ranking-lgbm-synthetic-v1-full --seed 42
 ```
 
-The ranking training input is JSONL with `features` and `label` fields. Training is offline; it is not imported into the FastAPI request path.
+The ranking training input is a synthetic dataset directory containing `manifest.json`,
+`train.jsonl`, `validation.jsonl` and `test.jsonl`. Training is offline; it is not
+imported into the FastAPI request path.
 
 ### Quality gates
 

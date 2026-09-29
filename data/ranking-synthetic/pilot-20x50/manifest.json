@@ -1,0 +1,30 @@
+{
+  "datasetVersion": "ranking-synthetic-v1",
+  "featureSchemaVersion": "ranking-features-v1",
+  "seed": 42,
+  "referenceTime": "2026-01-01T00:00:00.000Z",
+  "requestedUsers": 20,
+  "requestedSessions": 50,
+  "requestedEvents": 500,
+  "catalogProducts": 135,
+  "users": 20,
+  "sessions": 50,
+  "events": 836,
+  "rankingRows": 453,
+  "splits": {
+    "train": {
+      "rows": 314,
+      "positiveRate": 0.359873
+    },
+    "validation": {
+      "rows": 74,
+      "positiveRate": 0.337838
+    },
+    "test": {
+      "rows": 65,
+      "positiveRate": 0.369231
+    }
+  },
+  "writesToBusinessDatabase": false,
+  "publishesKafka": false
+}

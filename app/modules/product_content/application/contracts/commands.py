@@ -10,7 +10,7 @@ from app.modules.product_content.domain.models import ProductContext, ProductIma
 
 # Đồng bộ version với prompt để thay đổi công thức tên không trả lại kết quả cache của prompt cũ.
 CACHE_KEY_VERSION = "product-name-v2"
-DESCRIPTION_CACHE_KEY_VERSION = "product-description-v1"
+DESCRIPTION_CACHE_KEY_VERSION = "product-description-v2"
 
 
 # Giữ asset ID để tạo fingerprint cache nhưng loại nó khỏi context gửi sang LLM.

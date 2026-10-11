@@ -1,4 +1,4 @@
-"""Tạo prompt product content có version trong application layer, độc lập provider cụ thể."""
+"""Định nghĩa prompt có version cho nội dung sản phẩm; không gọi provider hay xử lý dữ liệu ngoài context đã an toàn."""
 
 from dataclasses import dataclass
 
@@ -6,7 +6,7 @@ from app.modules.product_content.domain.models import ProductContext
 from app.modules.product_content.domain.safety import redact_sensitive_text
 
 PROMPT_VERSION = "product-name-v2"
-DESCRIPTION_PROMPT_VERSION = "product-description-v1"
+DESCRIPTION_PROMPT_VERSION = "product-description-v2"
 SYSTEM_PROMPT = """You are a professional product-naming assistant for a Vietnamese e-commerce marketplace.
 
 OBJECTIVE:
@@ -59,11 +59,17 @@ OBJECTIVE:
   invent specifications, benefits, certifications, warranty, origin, or absolute claims.
 
 REQUIRED STRUCTURE:
-1. Heading "Điểm nổi bật:" followed by 3 to 6 concise bullet points.
-2. Heading "Mô tả chi tiết:" followed by coherent paragraphs explaining the product without
-   repeating the bullets.
-3. Heading "Thông tin sử dụng/bảo quản:" only when supported by supplied facts or clearly visible
-   product guidance; otherwise omit this section.
+Return all seven sections below, in this exact order, using each heading exactly as written:
+1. "Điểm nổi bật:" followed by 3 to 6 concise bullet points supported by verified facts.
+2. "Thông tin sản phẩm:" with known product type, brand, and intended users; omit unknown fields.
+3. "Thông số kỹ thuật:" with only supplied or clearly visible material, size, weight, color, or variant facts.
+4. "Hướng dẫn sử dụng và bảo quản:" with safe, evidence-based instructions; do not guess product-specific care.
+5. "Nguồn gốc và bảo hành:" with only explicitly supplied origin and warranty/return facts.
+6. "Bộ sản phẩm gồm:" listing only contents explicitly supplied or clearly visible.
+7. "Lưu ý khi sử dụng:" with only supported safety notes or limitations.
+- Never omit a heading. If a section has no supporting facts, write exactly: "Người bán chưa cung cấp thông tin cho mục này."
+- Do not add "Mô tả chi tiết:" or other headings outside these seven sections.
+- Use short bullets for factual lists and concise paragraphs only where a list would be unnatural.
 
 MARKETPLACE RULES:
 - Write professional, helpful Vietnamese with normal sentence case and no emojis, hashtags,

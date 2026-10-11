@@ -33,7 +33,19 @@ def test_prompt_contains_marketplace_naming_rules() -> None:
 def test_description_prompt_contains_structured_marketplace_rules() -> None:
     prompt = build_description_prompt(product_context())
 
-    assert "Điểm nổi bật:" in prompt.system
-    assert "Mô tả chi tiết:" in prompt.system
+    required_headings = (
+        "Điểm nổi bật:",
+        "Thông tin sản phẩm:",
+        "Thông số kỹ thuật:",
+        "Hướng dẫn sử dụng và bảo quản:",
+        "Nguồn gốc và bảo hành:",
+        "Bộ sản phẩm gồm:",
+        "Lưu ý khi sử dụng:",
+    )
+
+    assert all(heading in prompt.system for heading in required_headings)
+    assert "Never omit a heading." in prompt.system
+    assert "Người bán chưa cung cấp thông tin cho mục này." in prompt.system
+    assert 'Do not add "Mô tả chi tiết:"' in prompt.system
     assert "invent specifications" in prompt.system
     assert "550e8400" not in prompt.user

@@ -1,18 +1,18 @@
 {
-  "datasetVersion": "ranking-synthetic-v1",
-  "positiveRate": {
-    "train": {
-      "rows": 48408,
-      "positiveRate": 0.288217
+    "datasetVersion": "ranking-synthetic-v1",
+    "positiveRate": {
+        "train": {
+            "rows": 229,
+            "positiveRate": 0.349345
+        },
+        "validation": {
+            "rows": 55,
+            "positiveRate": 0.363636
+        },
+        "test": {
+            "rows": 54,
+            "positiveRate": 0.37037
+        }
     },
-    "validation": {
-      "rows": 10364,
-      "positiveRate": 0.290428
-    },
-    "test": {
-      "rows": 10378,
-      "positiveRate": 0.290422
-    }
-  },
-  "note": "Data quality summary; model metrics are produced by AI Service evaluator."
+    "note": "Data quality summary; model metrics are produced by AI Service evaluator."
 }

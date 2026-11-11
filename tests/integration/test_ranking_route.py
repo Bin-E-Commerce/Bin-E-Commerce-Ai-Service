@@ -26,9 +26,7 @@ def _configure_test_app(model: object | None):
 
     application = create_app()
     application.state.ranking_model = model
-    application.dependency_overrides[get_settings] = lambda: Settings(
-        internal_service_token=SecretStr("internal-test-token")
-    )
+    application.dependency_overrides[get_settings] = lambda: Settings(internal_service_token=SecretStr("internal-test-token"))
     return application
 
 
@@ -105,6 +103,7 @@ async def test_ranking_prediction_fails_closed_without_model() -> None:
                 headers={"x-internal-service-token": "internal-test-token"},
                 json={
                     "requestId": "request-1",
+                    "featureSchemaVersion": "ranking-features-v3",
                     "items": [{"itemId": "product-1", "features": [0.0] * 9}],
                 },
             )
@@ -112,7 +111,7 @@ async def test_ranking_prediction_fails_closed_without_model() -> None:
         application.dependency_overrides.clear()
 
     assert response.status_code == 503
-    assert response.json()["code"] == "RANKING_MODEL_UNAVAILABLE"
+    assert response.json()["code"] == "AI_RANKING_MODEL_UNAVAILABLE"
 
 
 # Batch raw score giữ được giá trị âm/dương và map theo đúng candidate input.
@@ -132,6 +131,7 @@ async def test_ranking_prediction_returns_raw_scores_in_input_order() -> None:
                 headers={"x-internal-service-token": "internal-test-token"},
                 json={
                     "requestId": "request-1",
+                    "featureSchemaVersion": "ranking-features-v3",
                     "items": [
                         {"itemId": "product-a", "features": [0.0] * 9},
                         {"itemId": "product-b", "features": [0.0] * 9},
@@ -150,3 +150,27 @@ async def test_ranking_prediction_returns_raw_scores_in_input_order() -> None:
             {"itemId": "product-b", "score": 0.75},
         ],
     }
+
+
+# Chặn recommendation service còn gửi công thức v2 vào model đã huấn luyện cho v3.
+@pytest.mark.asyncio
+async def test_ranking_prediction_rejects_stale_feature_schema() -> None:
+    """Trả 422 trước khi model đọc vector có semantics không tương thích."""
+
+    application = _configure_test_app(FakeRankingModel())
+    transport = httpx.ASGITransport(app=application)
+    try:
+        async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+            response = await client.post(
+                "/api/v1/ranking/predict",
+                headers={"x-internal-service-token": "internal-test-token"},
+                json={
+                    "requestId": "request-1",
+                    "featureSchemaVersion": "ranking-features-v2",
+                    "items": [{"itemId": "product-1", "features": [0.0] * 9}],
+                },
+            )
+    finally:
+        application.dependency_overrides.clear()
+
+    assert response.status_code == 422

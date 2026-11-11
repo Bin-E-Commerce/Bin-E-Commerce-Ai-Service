@@ -16,7 +16,7 @@ def _write_metadata(
     model_path,
     *,
     objective: str = "lambdarank",
-    feature_schema_version: str = "ranking-features-v2",
+    feature_schema_version: str = "ranking-features-v3",
     monotone_constraints: list[int] | None = None,
 ) -> None:
     """Ghi metadata tối thiểu theo contract do trainer tạo."""

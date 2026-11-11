@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 
 # Schema version là contract code-owned để môi trường deploy không thể bật nhầm semantics feature cũ.
-RANKING_FEATURE_SCHEMA_VERSION = "ranking-features-v2"
+RANKING_FEATURE_SCHEMA_VERSION = "ranking-features-v3"
 
 # Affinity không được làm giảm điểm khi các feature khác giữ nguyên; penalty âm không được làm tăng điểm.
 RANKING_FEATURE_MONOTONE_DIRECTIONS = {

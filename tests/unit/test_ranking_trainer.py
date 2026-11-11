@@ -44,13 +44,13 @@ def test_feature_schema_version_rejects_old_or_missing_manifest_value() -> None:
 
     assert (
         _validate_feature_schema_version(
-            "ranking-features-v2",
-            "ranking-features-v2",
+            "ranking-features-v3",
+            "ranking-features-v3",
         )
-        == "ranking-features-v2"
+        == "ranking-features-v3"
     )
     with pytest.raises(ValueError, match="FEATURE_SCHEMA_VERSION_MISMATCH"):
-        _validate_feature_schema_version("ranking-features-v1", "ranking-features-v2")
+        _validate_feature_schema_version("ranking-features-v2", "ranking-features-v3")
 
 
 # LambdaRank cần query candidates liên tiếp và group size tổng khớp số row.

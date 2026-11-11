@@ -30,7 +30,7 @@ def _write_dataset(dataset_dir: Path, catalog_source: str = "synthetic_catalog")
         json.dumps(
             {
                 "datasetVersion": "ranking-synthetic-v1",
-                "featureSchemaVersion": "ranking-features-v2",
+                "featureSchemaVersion": "ranking-features-v3",
                 "catalogSource": catalog_source,
             }
         ),

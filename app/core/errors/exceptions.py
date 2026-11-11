@@ -75,6 +75,15 @@ class ConfigurationError(AppError):
     public_message = "The AI provider is not configured."
 
 
+# Ranking không được phép thay model bằng một phép tính khác; caller nhận 503 đến khi artifact hợp lệ được nạp.
+class RankingModelUnavailableError(AppError):
+    """Artifact ranking chưa có, sai objective/schema hoặc không thể suy luận."""
+
+    status_code = 503
+    code = "AI_RANKING_MODEL_UNAVAILABLE"
+    public_message = "The recommendation ranking model is unavailable."
+
+
 # Lỗi riêng cho workflow nền tùy chỉnh khi service chưa có khóa mã hóa dùng chung giữa API và worker.
 class BackgroundConfigurationError(AppError):
     """Cấu hình bảo mật của mô tả background tùy chỉnh chưa sẵn sàng."""

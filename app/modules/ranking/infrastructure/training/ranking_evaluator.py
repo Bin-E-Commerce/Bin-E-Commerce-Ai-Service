@@ -1,77 +1,58 @@
-"""Đánh giá dataset ranking offline mà không gọi FastAPI, database hay provider bên ngoài.
+"""Đánh giá ranking offline theo từng request mà không gọi dịch vụ bên ngoài.
 
-Module này chỉ nhận label, prediction và request group đã được chuẩn hóa.
-Nó không train model, không ghi artifact và không được import vào request path.
+Module chỉ nhận label, raw score và request group. Các phép tính này phục vụ
+so sánh LambdaRank với baseline kiểm chứng; không được gọi trong request path.
 """
 
 import math
 from dataclasses import dataclass
+from datetime import datetime
+
+# Thứ tự phải khớp FEATURE_ORDER trong RecommendationMlRankingService.
+RANKING_FEATURE_NAMES = (
+    "profileAffinity",
+    "sessionContext",
+    "semanticSimilarity",
+    "coBehavior",
+    "popularity",
+    "freshness",
+    "quality",
+    "exploration",
+    "negativePenalty",
+)
+PROFILE_AFFINITY_FEATURE_INDEX = RANKING_FEATURE_NAMES.index("profileAffinity")
+POPULARITY_FEATURE_INDEX = RANKING_FEATURE_NAMES.index("popularity")
 
 
-# Dòng dữ liệu bất biến đại diện cho một candidate trong một request recommendation.
-# `features` là vector 9 số đã được Recommendation Service tạo ra, `label` là kết quả
-# hành vi 0/1, còn `request_id` dùng để gom các candidate cùng một lần xếp hạng.
-# Evaluator giữ request_id vì AUC nhìn toàn cục, còn NDCG/MRR phải đánh giá theo từng request.
+# Dữ liệu bất biến đại diện một candidate và outcome trong một request ranking.
 @dataclass(frozen=True)
 class RankingEvaluationRow:
-    """Một dòng feature/label tối thiểu để tính metric offline theo request."""
+    """Một row đã chuẩn hóa, có feature, relevance label và request group."""
 
     features: list[float]
     label: float
     request_id: str | None
+    request_time: datetime | None = None
 
 
-# Metric có thể là số hoặc None khi dữ liệu không đủ điều kiện tính, ví dụ AUC chỉ có một class.
+# Metric có thể không xác định khi thiếu request group hoặc không có positive.
 MetricValue = float | None
 
-# Đây là trọng số Standard Ranking đang dùng trong Recommendation Service.
-# Thứ tự phải khớp với 8 feature dương đầu tiên; feature thứ 9 là negativePenalty và bị trừ riêng.
-STANDARD_RANKING_WEIGHTS = (
-    0.25,
-    0.18,
-    0.15,
-    0.10,
-    0.12,
-    0.08,
-    0.08,
-    0.04,
-)
 
-
-# Tính LogLoss để đo chất lượng xác suất model dự đoán.
-# Prediction càng gần label thật thì LogLoss càng thấp; dự đoán sai nhưng quá tự tin sẽ bị phạt nặng.
-# Epsilon chặn log(0), vì xác suất đúng bằng 0 hoặc 1 có thể làm phép tính trở thành vô hạn.
-def binary_log_loss(labels: list[float], predictions: list[float]) -> float:
-    """Trả log loss trung bình và bảo vệ biên xác suất trước log(0)."""
-
-    # Không được ghép nhầm label của dòng này với prediction của dòng khác.
-    if len(labels) != len(predictions) or not labels:
-        raise ValueError("METRIC_INPUT_LENGTH_MISMATCH")
-    epsilon = 1e-15
-    total = 0.0
-    for label, prediction in zip(labels, predictions, strict=True):
-        # Ép prediction vào khoảng an toàn trước khi gọi log.
-        bounded = min(1.0 - epsilon, max(epsilon, float(prediction)))
-        total -= float(label) * math.log(bounded)
-        total -= (1.0 - float(label)) * math.log(1.0 - bounded)
-    return total / len(labels)
-
-
-# Tính AUC bằng rank sum thay vì phụ thuộc scikit-learn.
-# AUC trả lời câu hỏi: nếu lấy ngẫu nhiên một candidate positive và một candidate negative,
-# model có xếp positive cao hơn không? Giá trị 0.5 gần như ngẫu nhiên, càng gần 1 càng tốt.
-# Khi tất cả dòng chỉ có một label, không có cặp để so sánh nên trả None.
+# Tính AUC theo rank của score raw; metric này đo khả năng phân biệt cặp positive/negative toàn cục.
 def binary_auc(labels: list[float], predictions: list[float]) -> MetricValue:
-    """Trả AUC hoặc None khi tập dữ liệu chỉ có một class."""
+    """Trả AUC hoặc None khi tập dữ liệu không có cả hai lớp."""
 
-    # Kiểm tra kích thước trước khi tính rank để không tạo metric sai.
+    # Kích thước sai sẽ ghép nhầm nhãn với score; tập rỗng không có metric.
     if len(labels) != len(predictions) or not labels:
         raise ValueError("METRIC_INPUT_LENGTH_MISMATCH")
+    if not all(math.isfinite(value) for value in predictions):
+        raise ValueError("METRIC_PREDICTIONS_MUST_BE_FINITE")
     positives = sum(1 for label in labels if label > 0)
     negatives = len(labels) - positives
     if positives == 0 or negatives == 0:
         return None
-    # Sắp xếp tăng dần để dùng công thức rank-sum; tie sẽ được gán rank trung bình.
+    # Sort tăng dần và gán rank trung bình cho tie để AUC không phụ thuộc thứ tự đầu vào.
     ordered = sorted(enumerate(predictions), key=lambda item: item[1])
     positive_rank_sum = 0.0
     cursor = 0
@@ -80,38 +61,45 @@ def binary_auc(labels: list[float], predictions: list[float]) -> MetricValue:
         while end < len(ordered) and ordered[end][1] == ordered[cursor][1]:
             end += 1
         average_rank = (cursor + 1 + end) / 2
-        positive_rank_sum += sum(
-            average_rank for index, _ in ordered[cursor:end] if labels[index] > 0
-        )
+        positive_rank_sum += sum(average_rank for index, _ in ordered[cursor:end] if labels[index] > 0)
         cursor = end
     return (positive_rank_sum - positives * (positives + 1) / 2) / (positives * negatives)
 
 
-# Tính NDCG theo từng request để đo chất lượng thứ tự top-K.
-# Một request có nhiều candidate, vì vậy không thể trộn candidate của request này với request khác.
-# DCG đo thứ tự model tạo ra; IDCG là thứ tự lý tưởng. NDCG = DCG / IDCG và nằm trong [0, 1].
+# Gom candidate theo request vì các metric top-K chỉ có nghĩa trong cùng một danh sách được phục vụ.
+def _group_rows(rows: list[RankingEvaluationRow], predictions: list[float]) -> dict[str, list[tuple[float, float]]]:
+    """Ghép raw score/label vào request group, bỏ row thiếu request ID."""
+
+    # Giữ cặp row-score theo vị trí gốc; thiếu request ID không thể được xem như ranking query.
+    if len(rows) != len(predictions) or not rows:
+        raise ValueError("METRIC_INPUT_LENGTH_MISMATCH")
+    if not all(math.isfinite(value) for value in predictions):
+        raise ValueError("METRIC_PREDICTIONS_MUST_BE_FINITE")
+    groups: dict[str, list[tuple[float, float]]] = {}
+    for row, prediction in zip(rows, predictions, strict=True):
+        if row.request_id:
+            groups.setdefault(row.request_id, []).append((prediction, row.label))
+    return groups
+
+
+# Tính DCG/IDCG theo binary relevance; item positive ở rank cao đóng góp nhiều hơn.
 def ndcg_at_k(
     rows: list[RankingEvaluationRow],
     predictions: list[float],
     k: int,
 ) -> MetricValue:
-    """Trả NDCG@k trung bình trên các request có request_id hợp lệ."""
+    """Trả NDCG@k macro-average trên các request có ID."""
 
-    # NDCG cần cả row và prediction tương ứng, đồng thời cần ít nhất một row để chia trung bình.
-    if len(rows) != len(predictions) or not rows:
-        raise ValueError("METRIC_INPUT_LENGTH_MISMATCH")
-    groups: dict[str, list[tuple[float, float]]] = {}
-    for row, prediction in zip(rows, predictions, strict=True):
-        # Dataset legacy có thể không có request_id; khi đó không đủ thông tin tính ranking metric.
-        if row.request_id:
-            groups.setdefault(row.request_id, []).append((prediction, row.label))
+    # k không dương không phải một ranking cutoff; không tạo metric giả từ slice rỗng.
+    if k < 1:
+        raise ValueError("METRIC_CUTOFF_MUST_BE_POSITIVE")
+    groups = _group_rows(rows, predictions)
     if not groups:
         return None
     scores: list[float] = []
     for group in groups.values():
-        # Chỉ lấy top-k theo prediction để phản ánh vị trí người dùng thực sự nhìn thấy.
+        # Dùng đúng top-k model score và so với thứ tự lý tưởng của cùng request.
         ranked = sorted(group, key=lambda item: item[0], reverse=True)[:k]
-        # Ideal là thứ tự giả định mọi positive đều được đẩy lên đầu.
         ideal = sorted((label for _, label in group), reverse=True)[:k]
         dcg = sum(label / math.log2(index + 2) for index, (_, label) in enumerate(ranked))
         idcg = sum(label / math.log2(index + 2) for index, label in enumerate(ideal))
@@ -119,27 +107,42 @@ def ndcg_at_k(
     return sum(scores) / len(scores)
 
 
-# Tính MRR theo request group.
-# MRR chỉ quan tâm vị trí của positive đầu tiên: positive ở vị trí 1 được 1.0,
-# ở vị trí 2 được 0.5, ở vị trí 3 được 0.333...; càng cao càng tốt.
-def mean_reciprocal_rank(
+# Tính Recall@k theo mỗi request; request không có positive không vào mẫu số macro-average.
+def recall_at_k(
     rows: list[RankingEvaluationRow],
     predictions: list[float],
+    k: int,
 ) -> MetricValue:
-    """Trả MRR trung bình hoặc None khi không có request group."""
+    """Trả tỷ lệ positive được tìm thấy trong top-k trung bình theo request."""
 
-    # Nếu prediction lệch row thì thứ hạng được tính cho sai sản phẩm.
-    if len(rows) != len(predictions) or not rows:
-        raise ValueError("METRIC_INPUT_LENGTH_MISMATCH")
-    groups: dict[str, list[tuple[float, float]]] = {}
-    for row, prediction in zip(rows, predictions, strict=True):
-        if row.request_id:
-            groups.setdefault(row.request_id, []).append((prediction, row.label))
+    # Kiểm tra cutoff trước khi nhóm để cùng contract với NDCG.
+    if k < 1:
+        raise ValueError("METRIC_CUTOFF_MUST_BE_POSITIVE")
+    groups = _group_rows(rows, predictions)
+    if not groups:
+        return None
+    recalls: list[float] = []
+    for group in groups.values():
+        # Query không có positive không thể đánh giá recall nên được loại khỏi macro-average.
+        relevant_count = sum(1 for _, label in group if label > 0)
+        if relevant_count == 0:
+            continue
+        ranked = sorted(group, key=lambda item: item[0], reverse=True)[:k]
+        retrieved_count = sum(1 for _, label in ranked if label > 0)
+        recalls.append(retrieved_count / relevant_count)
+    return sum(recalls) / len(recalls) if recalls else 0.0
+
+
+# Tính MRR theo rank positive đầu tiên trong mỗi request có positive.
+def mean_reciprocal_rank(rows: list[RankingEvaluationRow], predictions: list[float]) -> MetricValue:
+    """Trả MRR macro-average hoặc None nếu thiếu request ID."""
+
+    groups = _group_rows(rows, predictions)
     if not groups:
         return None
     reciprocal_ranks: list[float] = []
     for group in groups.values():
-        # Xếp candidate giảm dần rồi tìm positive đầu tiên trong nhóm request.
+        # Chỉ request có positive mới xác định được vị trí kết quả liên quan đầu tiên.
         ranked = sorted(group, key=lambda item: item[0], reverse=True)
         first_positive = next(
             (index + 1 for index, (_, label) in enumerate(ranked) if label > 0),
@@ -147,73 +150,96 @@ def mean_reciprocal_rank(
         )
         if first_positive is not None:
             reciprocal_ranks.append(1.0 / first_positive)
-    return (
-        sum(reciprocal_ranks) / len(reciprocal_ranks)
-        if reciprocal_ranks
-        else 0.0
-    )
+    return sum(reciprocal_ranks) / len(reciprocal_ranks) if reciprocal_ranks else 0.0
 
 
-# Gom tất cả metric thành một contract ổn định cho metadata và báo cáo offline.
-# Hàm này được gọi riêng cho validation, test, Standard Ranking, AI Ranking và AI Enhanced Ranking.
-def evaluate_predictions(
-    rows: list[RankingEvaluationRow],
-    predictions: list[float],
-) -> dict[str, MetricValue]:
-    """Đánh giá binary và ranking metrics trên cùng một prediction batch."""
+# Gom metric ranking trên đúng một batch score để tránh report các chỉ số từ các lần predict khác nhau.
+def evaluate_predictions(rows: list[RankingEvaluationRow], predictions: list[float]) -> dict[str, MetricValue]:
+    """Đánh giá raw LambdaRank score bằng metric phân loại-thứ tự và top-K."""
 
-    # Tách label từ row nhưng vẫn truyền nguyên row vào NDCG/MRR để giữ request group.
+    # Chặn độ dài lệch trước khi tính positiveRate độc lập với helper ranking.
+    if len(rows) != len(predictions) or not rows:
+        raise ValueError("METRIC_INPUT_LENGTH_MISMATCH")
     labels = [row.label for row in rows]
     return {
-        "logLoss": binary_log_loss(labels, predictions),
         "auc": binary_auc(labels, predictions),
         "ndcgAt5": ndcg_at_k(rows, predictions, 5),
         "ndcgAt10": ndcg_at_k(rows, predictions, 10),
+        "recallAt5": recall_at_k(rows, predictions, 5),
+        "recallAt10": recall_at_k(rows, predictions, 10),
         "mrr": mean_reciprocal_rank(rows, predictions),
         "positiveRate": sum(1 for label in labels if label > 0) / len(labels),
     }
 
 
-# Tái tạo Standard Ranking hiện tại từ đúng 8 trọng số production và penalty cuối vector.
-# Đây là baseline để biết model AI có thực sự tốt hơn công thức deterministic hay chỉ học lại nó.
-def standard_ranking_predictions(
+# Dùng riêng profileAffinity để định lượng khả năng của tiêu chí đang nghiên cứu, không dùng ở serving.
+def profile_affinity_baseline_predictions(
     rows: list[RankingEvaluationRow],
 ) -> list[float]:
-    """Sinh baseline deterministic để so sánh model trên cùng request groups."""
+    """Xếp candidate theo feature profileAffinity đã tính từ hồ sơ."""
 
-    predictions: list[float] = []
-    for row in rows:
-        # 8 feature đầu đóng góp điểm dương; negativePenalty là feature cuối nên bị trừ sau tổng.
-        positive_score = sum(
-            weight * value
-            for weight, value in zip(STANDARD_RANKING_WEIGHTS, row.features[:-1], strict=True)
-        )
-        predictions.append(max(0.0, min(1.0, positive_score - row.features[-1])))
-    return predictions
+    # Input feature đã bounded bởi Recommendation Service; lỗi thiếu cột không được biến thành 0 âm thầm.
+    if any(len(row.features) <= PROFILE_AFFINITY_FEATURE_INDEX for row in rows):
+        raise ValueError("PROFILE_AFFINITY_FEATURE_MISSING")
+    return [row.features[PROFILE_AFFINITY_FEATURE_INDEX] for row in rows]
 
 
-# Mô phỏng AI-Enhanced Ranking theo policy blend của Recommendation Service.
-# Serving không thay Standard Ranking hoàn toàn: final = standard * (1 - blend) + AI * blend.
-# Blend bị giới hạn tối đa 0.5 để model mới không thể lấn át hoàn toàn baseline an toàn.
-def blended_ranking_predictions(
-    standard_predictions: list[float],
-    model_predictions: list[float],
-    blend: float = 0.3,
+# Dùng popularity làm mốc đơn giản để biết model có học vượt tín hiệu phổ biến không.
+def popularity_baseline_predictions(
+    rows: list[RankingEvaluationRow],
 ) -> list[float]:
-    """Trộn baseline và AI score để đo đúng semantics serving hiện tại."""
+    """Xếp candidate theo feature popularity, chỉ phục vụ báo cáo offline."""
 
-    # Hai danh sách phải cùng thứ tự candidate, nếu không phép blend sẽ ghép sai sản phẩm.
-    if len(standard_predictions) != len(model_predictions):
-        raise ValueError("METRIC_INPUT_LENGTH_MISMATCH")
-    bounded_blend = max(0.0, min(0.5, blend))
-    # Clamp final score để contract serving luôn trả score trong [0, 1].
-    return [
-        max(
-            0.0,
-            min(
-                1.0,
-                standard * (1.0 - bounded_blend) + model * bounded_blend,
-            ),
-        )
-        for standard, model in zip(standard_predictions, model_predictions, strict=True)
-    ]
+    # Dataset sai schema phải fail sớm để không báo cáo nhầm một cột feature khác thành popularity.
+    if any(len(row.features) <= POPULARITY_FEATURE_INDEX for row in rows):
+        raise ValueError("POPULARITY_FEATURE_MISSING")
+    return [row.features[POPULARITY_FEATURE_INDEX] for row in rows]
+
+
+# Xếp từng feature đơn lẻ làm baseline để kiểm tra tiêu chí nào có liên hệ với label.
+def feature_only_baseline_predictions(rows: list[RankingEvaluationRow], feature_name: str) -> list[float]:
+    """Trả score baseline từ đúng một cột, đảo dấu penalty âm."""
+
+    try:
+        feature_index = RANKING_FEATURE_NAMES.index(feature_name)
+    except ValueError as error:
+        raise ValueError("UNKNOWN_RANKING_FEATURE") from error
+    if any(len(row.features) <= feature_index for row in rows):
+        raise ValueError("RANKING_FEATURE_MISSING")
+    direction = -1.0 if feature_name == "negativePenalty" else 1.0
+    return [direction * row.features[feature_index] for row in rows]
+
+
+# Tóm tắt độ rộng từng request để biết NDCG@10 đang đo top-10 hay gần như toàn bộ candidate.
+def query_group_diagnostics(
+    rows: list[RankingEvaluationRow],
+) -> dict[str, int | float | None]:
+    """Báo số query và phân phối số candidate trên mỗi query."""
+
+    group_sizes: dict[str, int] = {}
+    for row in rows:
+        if row.request_id:
+            group_sizes[row.request_id] = group_sizes.get(row.request_id, 0) + 1
+    sizes = list(group_sizes.values())
+    if not sizes:
+        return {
+            "queryCount": 0,
+            "meanCandidatesPerQuery": None,
+            "medianCandidatesPerQuery": None,
+            "minCandidatesPerQuery": None,
+            "maxCandidatesPerQuery": None,
+            "queriesWithAtLeast10Candidates": 0,
+        }
+    ordered_sizes = sorted(sizes)
+    midpoint = len(ordered_sizes) // 2
+    median_size = (
+        float(ordered_sizes[midpoint]) if len(ordered_sizes) % 2 else (ordered_sizes[midpoint - 1] + ordered_sizes[midpoint]) / 2
+    )
+    return {
+        "queryCount": len(sizes),
+        "meanCandidatesPerQuery": sum(sizes) / len(sizes),
+        "medianCandidatesPerQuery": median_size,
+        "minCandidatesPerQuery": min(sizes),
+        "maxCandidatesPerQuery": max(sizes),
+        "queriesWithAtLeast10Candidates": sum(size >= 10 for size in sizes),
+    }

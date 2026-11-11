@@ -6,7 +6,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Header, Request
 
 from app.core.config import Settings, get_settings
-from app.core.errors import AuthenticationError, ConfigurationError
+from app.core.errors import (
+    AuthenticationError,
+    ConfigurationError,
+    RankingModelUnavailableError,
+)
 from app.modules.ranking.application.service import RankingPredictionService
 from app.modules.ranking.presentation.api.schemas import (
     RankingPredictionResponse,
@@ -38,7 +42,7 @@ def get_ranking_prediction_service(
 
     model = getattr(request.app.state, "ranking_model", None)
     if model is None:
-        raise ConfigurationError()
+        raise RankingModelUnavailableError()
     return RankingPredictionService(
         model,
         settings.ranking_max_items,
@@ -72,16 +76,11 @@ async def status(
     request: Request,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> RankingStatusResponse:
-    """Trả model version và trạng thái fallback để Recommendation/Admin biết AI có thực sự sẵn sàng."""
+    """Trả readiness để Recommendation/Admin biết có artifact LambdaRank hợp lệ hay chưa."""
 
     model = getattr(request.app.state, "ranking_model", None)
-    if model is None:
-        raise ConfigurationError()
-    model_version = str(getattr(model, "model_version", "ranking-fallback-v1"))
-    fallback = model_version.startswith("ranking-fallback")
     return RankingStatusResponse(
-        ready=not fallback,
-        fallback=fallback,
-        model_version=model_version,
+        ready=model is not None,
+        model_version=(str(model.model_version) if model is not None else None),
         feature_count=settings.ranking_expected_features,
     )

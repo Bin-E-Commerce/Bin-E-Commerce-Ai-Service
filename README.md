@@ -54,29 +54,29 @@ The design follows familiar Hexagonal/Clean Architecture ideas: the domain and u
 
 ## 2. Service at a glance
 
-| | |
-| --- | --- |
-| **Domain** | Seller AI assistance and recommendation infrastructure |
-| **HTTP runtime** | FastAPI + Uvicorn |
-| **Language** | Python 3.12 |
-| **Persistence** | PostgreSQL through SQLAlchemy async adapters |
-| **Cache and limits** | Redis in service mode; in-memory adapters only in explicit memory mode |
-| **Messaging** | Kafka through `aiokafka` |
-| **AI providers** | Configured OpenAI text/image/embedding adapters; provider ports remain replaceable |
-| **Ranking** | LightGBM artifact with deterministic `ranking-fallback-v1` scorer |
-| **Default port** | `3009` |
-| **Entry point** | `app.entrypoints.api:app` |
+|                      |                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------- |
+| **Domain**           | Seller AI assistance and recommendation infrastructure                                    |
+| **HTTP runtime**     | FastAPI + Uvicorn                                                                         |
+| **Language**         | Python 3.12                                                                               |
+| **Persistence**      | PostgreSQL through SQLAlchemy async adapters                                              |
+| **Cache and limits** | Redis in service mode; in-memory adapters only in explicit memory mode                    |
+| **Messaging**        | Kafka through `aiokafka`                                                                  |
+| **AI providers**     | Configured OpenAI text/image/embedding adapters; provider ports remain replaceable        |
+| **Ranking**          | Trained LightGBM LambdaRank artifact; unavailable if a compatible artifact is not mounted |
+| **Default port**     | `3009`                                                                                    |
+| **Entry point**      | `app.entrypoints.api:app`                                                                 |
 
 ## 3. Core capabilities
 
-| Capability | What it does | Why it matters |
-| --- | --- | --- |
-| Product name suggestions | Produces three Vietnamese suggestions from category, seller context, and approved CDN images | Reduces repetitive seller input while preserving a review step |
-| Product descriptions | Generates one preview description with public warnings | Keeps generated content inside a bounded, reviewable contract |
-| Image optimization | Creates white-background or lifestyle outputs as reviewable jobs | Keeps originals untouched until a seller explicitly applies results |
-| Embeddings | Consumes recommendation embedding jobs and publishes versioned vectors | Moves provider latency and retry work off the request path |
-| ML ranking | Scores a bounded batch of normalized feature vectors | Lets Recommendation Service trial a model without exposing model internals |
-| Safe fallback | Uses deterministic output when the model artifact is missing or fails | Preserves the downstream ranking contract during rollout and incidents |
+| Capability                  | What it does                                                                                 | Why it matters                                                                                |
+| --------------------------- | -------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Product name suggestions    | Produces three Vietnamese suggestions from category, seller context, and approved CDN images | Reduces repetitive seller input while preserving a review step                                |
+| Product descriptions        | Generates one preview description with public warnings                                       | Keeps generated content inside a bounded, reviewable contract                                 |
+| Image optimization          | Creates white-background or lifestyle outputs as reviewable jobs                             | Keeps originals untouched until a seller explicitly applies results                           |
+| Embeddings                  | Consumes recommendation embedding jobs and publishes versioned vectors                       | Moves provider latency and retry work off the request path                                    |
+| ML ranking                  | Scores a bounded batch of normalized feature vectors                                         | Lets Recommendation Service trial a model without exposing model internals                    |
+| Fail-closed model readiness | Validates objective, version, feature schema, and training metadata                          | Prevents an incompatible artifact or handwritten scorer from being recorded as a model result |
 
 ## 4. Trust surface
 
@@ -86,7 +86,7 @@ The design follows familiar Hexagonal/Clean Architecture ideas: the domain and u
 >
 > **Permission surface:** seller HTTP routes depend on Gateway-forwarded user and permission headers. Ranking and model-status routes require `x-internal-service-token`; they are not browser APIs.
 >
-> **Reversibility:** set `AI_RUNTIME_MODE=memory` for a dependency-light local process, set AI feature flags off at the caller/policy boundary, stop workers independently, or remove the configured model path to return ranking to deterministic fallback. Do not delete production data to disable a provider.
+> **Reversibility:** set `AI_RUNTIME_MODE=memory` for a dependency-light local process, set AI feature flags off at the caller/policy boundary, stop workers independently, or remove the configured model path to make ranking unavailable. The caller does not switch to a deterministic scoring formula. Do not delete production data to disable a provider.
 
 ## 5. See It Work
 
@@ -124,8 +124,8 @@ Expected response:
 
 ```json
 {
-  "status": "ok",
-  "service": "ai-service"
+    "status": "ok",
+    "service": "ai-service"
 }
 ```
 
@@ -138,20 +138,21 @@ curl http://localhost:3009/api/v1/ranking/status `
   -H "x-internal-service-token: replace-with-local-token"
 ```
 
-When the artifact is missing or incompatible, the safe status is equivalent to:
+When the artifact is missing or incompatible, the status is equivalent to:
 
 ```json
 {
-  "ready": false,
-  "fallback": true,
-  "modelVersion": "ranking-fallback-v1",
-  "featureCount": 9
+    "ready": false,
+    "modelVersion": null,
+    "featureCount": null
 }
 ```
 
+Prediction returns HTTP 503 until a compatible LambdaRank artifact is loaded.
+
 ### Predict a ranking batch
 
-The current contract accepts exactly nine finite features per item, keeps input order, and clamps every score to `[0, 1]`.
+The current contract accepts exactly nine finite input features per item, keeps input order, and returns finite raw LambdaRank relevance scores. Output scores are not probabilities and are not clamped to `[0, 1]`.
 
 ```powershell
 curl -X POST http://localhost:3009/api/v1/ranking/predict `
@@ -168,59 +169,75 @@ curl -X POST http://localhost:3009/api/v1/ranking/predict `
   }'
 ```
 
-The response includes `requestId`, `modelVersion`, and one prediction per item. With no compatible LightGBM artifact, `modelVersion` is `ranking-fallback-v1`.
+The response includes `requestId`, `modelVersion`, and one prediction per item. Without a compatible LightGBM artifact, the route returns 503 and does not generate substitute scores.
 
 ### Ranking feature contract
 
 The nine values must keep this order:
 
-| Position | Feature |
-| ---: | --- |
-| 1 | Profile affinity |
-| 2 | Session context |
-| 3 | Semantic similarity |
-| 4 | Co-behavior |
-| 5 | Popularity |
-| 6 | Freshness |
-| 7 | Quality |
-| 8 | Exploration |
-| 9 | Negative penalty |
+| Position | Feature             |
+| -------: | ------------------- |
+|        1 | Profile affinity    |
+|        2 | Session context     |
+|        3 | Semantic similarity |
+|        4 | Co-behavior         |
+|        5 | Popularity          |
+|        6 | Freshness           |
+|        7 | Quality             |
+|        8 | Exploration         |
+|        9 | Negative penalty    |
 
-### Train from the synthetic behavior simulator
+### Train a LambdaRank artifact from an offline dataset
 
-Recommendation Service có CLI offline để đọc catalog thật, tạo persona/session
-giả và sinh dataset hành vi. Simulator không tạo user trong PostgreSQL, không
-publish Kafka và không gọi Tiki/OpenAI. Dữ liệu synthetic chỉ dùng để kiểm tra
-pipeline và chứng minh integration; không được trình bày như hành vi người dùng
-thật.
+Recommendation Service có CLI offline để tạo persona/session giả và sinh
+dataset hành vi. Mặc định CLI đọc catalog recommendation trong PostgreSQL; dùng
+`--synthetic-catalog-size` để tự tạo catalog giả và chạy không cần PostgreSQL.
+Simulator không tạo user trong PostgreSQL, không publish Kafka và không gọi
+Tiki/OpenAI. Dữ liệu synthetic chỉ dùng để kiểm tra pipeline; không được trình
+bày như hành vi người dùng thật.
 
 ```powershell
 cd services/recommendation-service
 npm run ranking-simulate -- `
-  --users 20 `
-  --sessions 50 `
-  --events 500 `
+  --users 1000 `
+  --sessions 5000 `
+  --events 100000 `
+  --synthetic-catalog-size 500 `
   --seed 42 `
-  --output ../../services/ai-service/data/ranking-synthetic/pilot-20x50
+  --reference-time 2026-11-11T00:00:00.000Z `
+  --output ../../services/ai-service/data/ranking-synthetic/synthetic-catalog-500-1000u-5000s-seed42
 ```
 
+Simulator chỉ xác nhận pipeline và không phải bằng chứng hiệu quả với người dùng
+thật. Dataset cũ trong `data/ranking-synthetic/` thiếu `requestAt` nên không còn
+được trainer nhận. Dataset mới cần có thời điểm cho từng request, request group
+không bị tách qua split, và train/validation/test phải theo thứ tự thời gian.
+Chỉ dùng model synthetic để kiểm tra trong môi trường development; không đóng
+gói nó vào runtime hoặc báo cáo metric synthetic như kết quả khách hàng thật.
+
 Sau khi kiểm tra `manifest.json`, `metrics.json` và các file JSONL, train model
-bằng split theo session đã được simulator tạo sẵn:
+bằng split theo thời gian đã được simulator tạo sẵn:
 
 ```powershell
 cd services/ai-service
 .\\.venv\\Scripts\\python.exe -m app.entrypoints.training.ranking_train `
-  --dataset-dir data/ranking-synthetic/pilot-20x50 `
-  --output artifacts/synthetic/ranking-lgbm-synthetic-v1.txt `
-  --version ranking-lgbm-synthetic-v1 `
+  --dataset-dir data/ranking-synthetic/synthetic-catalog-500-1000u-5000s-seed42 `
+  --output artifacts/development/ranking-lambdarank-v2.txt `
+  --version ranking-lambdarank-v2 `
   --seed 42
 ```
 
 Trainer ghi artifact mới, file metadata và sidecar metric cạnh artifact. Dataset
 input có thể được mount read-only; `metrics.json` trong dataset vẫn là data-quality
-report của simulator. Model synthetic được lưu trong `artifacts/synthetic/`. Metadata
-bao gồm dataset/feature schema version, số dòng từng split, positive rate,
-best iteration, LogLoss, AUC, NDCG@5, NDCG@10 và MRR.
+report của simulator. Metadata gồm dataset/feature schema version, số dòng và số
+query từng split, phân phối số candidate/query, positive rate, best iteration,
+NDCG/Recall@5/10, AUC, MRR, feature baselines, feature ablations, objective
+`lambdarank` và constraint giảm đơn điệu trên `negativePenalty`.
+
+Chỉ promote artifact được đánh giá bằng dữ liệu thực, nhãn impression hợp lệ và
+test theo thời gian đã khóa. AI Service không có artifact mặc định; nếu chưa mount
+artifact LambdaRank có đúng version/schema, ranking trả unavailable thay vì dùng
+scorer thay thế.
 
 ## 6. Install
 
@@ -249,10 +266,10 @@ The project also contains `requirements.txt` for the existing pip workflow:
 
 ### Runtime modes
 
-| Mode | Required infrastructure | Intended use |
-| --- | --- | --- |
-| `memory` | No database, Redis, token, or OpenAI key for boot | Unit tests and dependency-light HTTP development |
-| `service` | `DATABASE_URL`, `REDIS_URL`, `INTERNAL_SERVICE_TOKEN`, `OPENAI_API_KEY`; encryption key when image optimization is enabled | Integrated local stack and deployed runtime |
+| Mode      | Required infrastructure                                                                                                    | Intended use                                     |
+| --------- | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| `memory`  | No database, Redis, token, or OpenAI key for boot                                                                          | Unit tests and dependency-light HTTP development |
+| `service` | `DATABASE_URL`, `REDIS_URL`, `INTERNAL_SERVICE_TOKEN`, `OPENAI_API_KEY`; encryption key when image optimization is enabled | Integrated local stack and deployed runtime      |
 
 `application_lifespan` validates service mode before opening external connections. Missing required settings fail fast instead of silently running with unsafe adapters.
 
@@ -282,9 +299,9 @@ Application use case
             ├── cache and rate limiter
             ├── provider port ──────► OpenAI adapter
             ├── media/product client ─► internal service
-            └── ranking registry ───► LightGBM or fallback
+            └── ranking registry ───► validated LightGBM LambdaRank
             ▼
-Stable response envelope
+Stable response envelope or model-unavailable error
 ```
 
 1. The router validates shape, size, host, permission, or internal token at the HTTP boundary.
@@ -335,48 +352,48 @@ Malformed events go to the configured DLQ. Provider/transient failures are retri
 - Seller content generation use cases and public warning/safety mapping.
 - Image optimization job lifecycle, outbox records, worker processing, and review transitions.
 - Embedding worker transformation and version/dimension validation before publication.
-- Ranking model loading, feature validation, score clamping, and model-status reporting.
+- LambdaRank artifact loading, input-feature validation, raw-score validation, and model-status reporting.
 
 ### Delegates
 
-| Responsibility | Delegated to |
-| --- | --- |
-| JWT verification and public route policy | API Gateway / Auth Service |
-| Product ownership, product state, and inventory | Product Service |
-| Upload keys, asset storage, and CDN URLs | Media Service |
-| Recommendation profiles, candidates, traffic policy, and Qdrant projection | Recommendation Service |
-| Canonical product catalog and seller application state | Product / Catalog / Seller Services |
-| Model training data selection and offline evaluation | Offline ranking workflow; `ranking_train` only trains an artifact |
+| Responsibility                                                             | Delegated to                                                      |
+| -------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| JWT verification and public route policy                                   | API Gateway / Auth Service                                        |
+| Product ownership, product state, and inventory                            | Product Service                                                   |
+| Upload keys, asset storage, and CDN URLs                                   | Media Service                                                     |
+| Recommendation profiles, candidates, traffic policy, and Qdrant projection | Recommendation Service                                            |
+| Canonical product catalog and seller application state                     | Product / Catalog / Seller Services                               |
+| Model training data selection and offline evaluation                       | Offline ranking workflow; `ranking_train` only trains an artifact |
 
 ## 10. Service Communication
 
 ### Synchronous
 
-| Direction | Dependency | Purpose |
-| --- | --- | --- |
-| Inbound | API Gateway | Seller content and image-optimization HTTP requests |
-| Inbound | Recommendation Service | Internal ranking prediction and model status |
-| Outbound | Media Service | Resolve/upload/cleanup approved media assets |
-| Outbound | Product Service | Resolve product owner and source media for optimization |
-| Outbound | Configured AI provider | Text, image, and embedding generation |
+| Direction | Dependency             | Purpose                                                 |
+| --------- | ---------------------- | ------------------------------------------------------- |
+| Inbound   | API Gateway            | Seller content and image-optimization HTTP requests     |
+| Inbound   | Recommendation Service | Internal ranking prediction and model status            |
+| Outbound  | Media Service          | Resolve/upload/cleanup approved media assets            |
+| Outbound  | Product Service        | Resolve product owner and source media for optimization |
+| Outbound  | Configured AI provider | Text, image, and embedding generation                   |
 
 ### Asynchronous
 
-| Direction | Topic | Purpose |
-| --- | --- | --- |
-| Producer | `ai.image-optimization.requested.v1` | Queue image optimization metadata |
-| Producer | `ai.image-optimization.dlq.v1` | Dead-letter malformed or exhausted image events |
-| Consumer/Producer | `recommendation.product-embedding.requested.v1` → `recommendation.product-embedding.generated.v1` | Generate and publish product vectors |
-| Producer | `recommendation.product-embedding.dlq.v1` | Dead-letter invalid or unrecoverable embedding events |
+| Direction         | Topic                                                                                             | Purpose                                               |
+| ----------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| Producer          | `ai.image-optimization.requested.v1`                                                              | Queue image optimization metadata                     |
+| Producer          | `ai.image-optimization.dlq.v1`                                                                    | Dead-letter malformed or exhausted image events       |
+| Consumer/Producer | `recommendation.product-embedding.requested.v1` → `recommendation.product-embedding.generated.v1` | Generate and publish product vectors                  |
+| Producer          | `recommendation.product-embedding.dlq.v1`                                                         | Dead-letter invalid or unrecoverable embedding events |
 
 ## 11. Data Ownership
 
-| Storage | Ownership and purpose |
-| --- | --- |
-| PostgreSQL | Image optimization jobs, generated asset metadata, leases, and outbox records in service mode |
-| Redis | Result cache and rate-limit state; it is not the source of truth for jobs or vectors |
-| Local artifact path | Read-only ranking model artifact configured by `RANKING_MODEL_PATH` |
-| Kafka | Durable transport for worker requests, generated embedding events, and DLQ records |
+| Storage                  | Ownership and purpose                                                                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| PostgreSQL               | Image optimization jobs, generated asset metadata, leases, and outbox records in service mode                |
+| Redis                    | Result cache and rate-limit state; it is not the source of truth for jobs or vectors                         |
+| Local artifact path      | Read-only ranking model artifact configured by `RANKING_MODEL_PATH`                                          |
+| Kafka                    | Durable transport for worker requests, generated embedding events, and DLQ records                           |
 | S3/CDN via Media Service | Binary asset storage; AI Service keeps references and metadata rather than owning browser upload credentials |
 
 ### Main persistence concepts
@@ -390,40 +407,40 @@ Malformed events go to the configured DLQ. Provider/transient failures are retri
 
 ### Health and operations
 
-| Method | Route | Auth | Purpose |
-| --- | --- | --- | --- |
-| `GET` | `/api/health` | None | Liveness of the HTTP process |
-| `GET` | `/metrics` | Internal deployment | Low-cardinality Prometheus text; hidden from OpenAPI |
-| `GET` | `/api/v1/ranking/status` | Internal token | Model readiness, fallback state, version, feature count |
+| Method | Route                    | Auth                | Purpose                                              |
+| ------ | ------------------------ | ------------------- | ---------------------------------------------------- |
+| `GET`  | `/api/health`            | None                | Liveness of the HTTP process                         |
+| `GET`  | `/metrics`               | Internal deployment | Low-cardinality Prometheus text; hidden from OpenAPI |
+| `GET`  | `/api/v1/ranking/status` | Internal token      | Model readiness, version, and feature count          |
 
 ### Seller product content
 
-| Method | Route | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/v1/seller/product-content/name-suggestions` | Return three sanitized Vietnamese name suggestions |
-| `POST` | `/api/v1/seller/product-content/description-suggestions` | Return one sanitized product description preview |
+| Method | Route                                                    | Purpose                                            |
+| ------ | -------------------------------------------------------- | -------------------------------------------------- |
+| `POST` | `/api/v1/seller/product-content/name-suggestions`        | Return three sanitized Vietnamese name suggestions |
+| `POST` | `/api/v1/seller/product-content/description-suggestions` | Return one sanitized product description preview   |
 
 Request rules include 1–3 HTTPS images, configured CDN origin matching, bounded category/seller text, `vi-VN` locale, and the configured seller permission. Responses contain suggestions/description, warnings, and `requestId`; provider prompts and internal details are not exposed.
 
 ### Seller image optimization
 
-| Method | Route | Purpose |
-| --- | --- | --- |
-| `POST` | `/api/v1/seller/ai/image-optimization/jobs` | Create an idempotent asynchronous batch; requires `Idempotency-Key` |
-| `GET` | `/api/v1/seller/ai/image-optimization/jobs/:jobId` | Read a seller-owned job |
-| `GET` | `/api/v1/seller/ai/image-optimization/overview` | Read seller dashboard counts |
-| `POST` | `/api/v1/seller/ai/image-optimization/jobs/:jobId/apply` | Apply selected generated assets with optimistic version check |
-| `POST` | `/api/v1/seller/ai/image-optimization/jobs/:jobId/reject` | Reject a review result |
-| `POST` | `/api/v1/seller/ai/image-optimization/jobs/:jobId/rollback` | Roll back an applied result when permitted |
+| Method | Route                                                       | Purpose                                                             |
+| ------ | ----------------------------------------------------------- | ------------------------------------------------------------------- |
+| `POST` | `/api/v1/seller/ai/image-optimization/jobs`                 | Create an idempotent asynchronous batch; requires `Idempotency-Key` |
+| `GET`  | `/api/v1/seller/ai/image-optimization/jobs/:jobId`          | Read a seller-owned job                                             |
+| `GET`  | `/api/v1/seller/ai/image-optimization/overview`             | Read seller dashboard counts                                        |
+| `POST` | `/api/v1/seller/ai/image-optimization/jobs/:jobId/apply`    | Apply selected generated assets with optimistic version check       |
+| `POST` | `/api/v1/seller/ai/image-optimization/jobs/:jobId/reject`   | Reject a review result                                              |
+| `POST` | `/api/v1/seller/ai/image-optimization/jobs/:jobId/rollback` | Roll back an applied result when permitted                          |
 
 Supported modes are `WHITE_BACKGROUND` and `LIFESTYLE_BACKGROUND`. Lifestyle requests use a bounded preset or description; generated assets are reviewed before apply.
 
 ### Internal ranking
 
-| Method | Route | Purpose |
-| --- | --- | --- |
+| Method | Route                     | Purpose                                                                                             |
+| ------ | ------------------------- | --------------------------------------------------------------------------------------------------- |
 | `POST` | `/api/v1/ranking/predict` | Score up to 300 unique items, each with up to 64 features and the configured expected feature count |
-| `GET` | `/api/v1/ranking/status` | Report whether a real artifact is ready or fallback is active |
+| `GET`  | `/api/v1/ranking/status`  | Report whether a compatible LambdaRank artifact is ready                                            |
 
 The current default expected feature count is `9`. A request with duplicate IDs, mixed vector lengths, NaN/Infinity, too many items, or an invalid token is rejected before prediction.
 
@@ -464,33 +481,33 @@ services/ai-service/
 
 ### Important files
 
-| File | Why it matters |
-| --- | --- |
-| `app/bootstrap/api.py` | Registers routers, health, metrics, request IDs, and the stable error envelope |
-| `app/bootstrap/lifespan.py` | Fails fast on incomplete service configuration and composes memory/service adapters |
-| `app/modules/ranking/infrastructure/registry/model_registry.py` | Loads LightGBM only when the artifact is compatible; otherwise returns deterministic fallback |
-| `app/modules/image_optimization/domain/models.py` | Protects job lifecycle, leases, source/output mapping, and apply/rollback invariants |
-| `app/modules/image_optimization/infrastructure/persistence/outbox_relay.py` | Claims, retries, publishes, and dead-letters image events without holding database locks during network calls |
-| `app/modules/product_content/presentation/api/router.py` | Enforces CDN host validation and maps safe seller responses |
-| `app/modules/embeddings/infrastructure/messaging/worker.py` | Validates embedding events, retries provider calls, caches generated payloads, and commits Kafka offsets safely |
-| `migrations/versions/` | Versioned PostgreSQL changes for image optimization persistence |
+| File                                                                        | Why it matters                                                                                                  |
+| --------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `app/bootstrap/api.py`                                                      | Registers routers, health, metrics, request IDs, and the stable error envelope                                  |
+| `app/bootstrap/lifespan.py`                                                 | Fails fast on incomplete service configuration and composes memory/service adapters                             |
+| `app/modules/ranking/infrastructure/registry/model_registry.py`             | Loads only a compatible LambdaRank artifact; otherwise reports the model unavailable                            |
+| `app/modules/image_optimization/domain/models.py`                           | Protects job lifecycle, leases, source/output mapping, and apply/rollback invariants                            |
+| `app/modules/image_optimization/infrastructure/persistence/outbox_relay.py` | Claims, retries, publishes, and dead-letters image events without holding database locks during network calls   |
+| `app/modules/product_content/presentation/api/router.py`                    | Enforces CDN host validation and maps safe seller responses                                                     |
+| `app/modules/embeddings/infrastructure/messaging/worker.py`                 | Validates embedding events, retries provider calls, caches generated payloads, and commits Kafka offsets safely |
+| `migrations/versions/`                                                      | Versioned PostgreSQL changes for image optimization persistence                                                 |
 
 ## 14. Configuration Reference
 
 Copy [`.env.example`](./.env.example) to `.env`. The table groups the variables by responsibility; the example file remains the canonical complete inventory.
 
-| Group | Key variables | Notes |
-| --- | --- | --- |
-| Runtime | `APP_NAME`, `PORT`, `NODE_ENV`, `AI_RUNTIME_MODE` | `service` is the integrated mode; `memory` is explicit local/test mode |
-| Text/image provider | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_IMAGE_MODEL`, provider selectors | Secrets stay server-side |
-| Content limits | `AI_MAX_IMAGES`, `AI_MAX_TEXT_CHARS`, `AI_CACHE_TTL_SECONDS`, `AI_RATE_LIMIT_*` | Bounds cost and request pressure |
-| Media/Product | `MEDIA_PUBLIC_CDN_URL`, `MEDIA_SERVICE_URL`, `PRODUCT_SERVICE_URL` | CDN origins are validated before vision calls |
-| Persistence | `DATABASE_URL`, `REDIS_URL` | Required in service mode |
-| Internal security | `INTERNAL_SERVICE_TOKEN` | Required for ranking and trusted internal calls |
-| Kafka | `KAFKA_BOOTSTRAP_SERVERS`, image and embedding topic/group variables | Worker-specific contracts are versioned |
-| Embeddings | `EMBEDDING_MODEL*`, dimensions, timeout, retries, topics | Default dimensions: `1536` |
-| Ranking | `RANKING_MODEL_PATH`, `RANKING_MODEL_VERSION`, `RANKING_EXPECTED_FEATURES`, limits | Default expected features: `9`; no path means fallback |
-| Image jobs | `AI_IMAGE_*` | Feature flag, quotas, leases, retries, quality, output and encryption settings |
+| Group               | Key variables                                                                      | Notes                                                                          |
+| ------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| Runtime             | `APP_NAME`, `PORT`, `NODE_ENV`, `AI_RUNTIME_MODE`                                  | `service` is the integrated mode; `memory` is explicit local/test mode         |
+| Text/image provider | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_IMAGE_MODEL`, provider selectors         | Secrets stay server-side                                                       |
+| Content limits      | `AI_MAX_IMAGES`, `AI_MAX_TEXT_CHARS`, `AI_CACHE_TTL_SECONDS`, `AI_RATE_LIMIT_*`    | Bounds cost and request pressure                                               |
+| Media/Product       | `MEDIA_PUBLIC_CDN_URL`, `MEDIA_SERVICE_URL`, `PRODUCT_SERVICE_URL`                 | CDN origins are validated before vision calls                                  |
+| Persistence         | `DATABASE_URL`, `REDIS_URL`                                                        | Required in service mode                                                       |
+| Internal security   | `INTERNAL_SERVICE_TOKEN`                                                           | Required for ranking and trusted internal calls                                |
+| Kafka               | `KAFKA_BOOTSTRAP_SERVERS`, image and embedding topic/group variables               | Worker-specific contracts are versioned                                        |
+| Embeddings          | `EMBEDDING_MODEL*`, dimensions, timeout, retries, topics                           | Default dimensions: `1536`                                                     |
+| Ranking             | `RANKING_MODEL_PATH`, `RANKING_MODEL_VERSION`, `RANKING_EXPECTED_FEATURES`, limits | Default expected features: `9`; no valid artifact means ranking is unavailable |
+| Image jobs          | `AI_IMAGE_*`                                                                       | Feature flag, quotas, leases, retries, quality, output and encryption settings |
 
 ## 15. Development
 
@@ -504,7 +521,7 @@ npm run start
 npm run worker
 npm run embedding-worker
 npm run outbox
-npm run ranking-train -- --dataset-dir data/ranking-synthetic/pilot-1000u-5000s-seed42 --output artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt --version ranking-lgbm-synthetic-v1-full --seed 42
+npm run ranking-train -- --dataset-dir data/ranking-synthetic/my-timestamped-dataset --output artifacts/development/ranking-lambdarank-v2.txt --version ranking-lambdarank-v2 --seed 42
 ```
 
 The ranking training input is a synthetic dataset directory containing `manifest.json`,
@@ -525,32 +542,32 @@ npm run check
 
 ### Testing strategy
 
-| Test area | Coverage |
-| --- | --- |
-| Unit | Safety policies, prompt building, provider adapters, image state machine, cache/rate-limit behavior, ranking validation |
-| Integration | Product-content, image-optimization, and ranking HTTP contracts using test application wiring |
-| Architecture | Import-linter verifies domain independence from framework/infrastructure modules |
-| Quality | Ruff, Mypy, UTF-8 check, compile check, and coverage through Pytest |
+| Test area    | Coverage                                                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------- |
+| Unit         | Safety policies, prompt building, provider adapters, image state machine, cache/rate-limit behavior, ranking validation |
+| Integration  | Product-content, image-optimization, and ranking HTTP contracts using test application wiring                           |
+| Architecture | Import-linter verifies domain independence from framework/infrastructure modules                                        |
+| Quality      | Ruff, Mypy, UTF-8 check, compile check, and coverage through Pytest                                                     |
 
 Tests use the application factory and do not call paid providers. Keep provider secrets out of test fixtures and logs.
 
 ## 16. Engineering Decisions
 
-| Decision | Reason |
-| --- | --- |
-| Provider ports instead of SDK calls in use cases | Allows OpenAI replacement and keeps business code testable |
-| Explicit memory/service runtime modes | Prevents accidental fail-open production behavior |
-| Model registry with deterministic fallback | Keeps Recommendation response contract available while a model is missing or unhealthy |
-| Image job + outbox in one database boundary | Prevents a committed job from losing its Kafka request silently |
-| Idempotency key and job lease | Protects provider cost when HTTP retries or Kafka redelivery occur |
-| Server-controlled CDN allow-list | Reduces SSRF and prevents arbitrary URLs from reaching a vision provider |
-| Internal token for ranking routes | Separates service-to-service authorization from browser/user permissions |
+| Decision                                         | Reason                                                                                    |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| Provider ports instead of SDK calls in use cases | Allows OpenAI replacement and keeps business code testable                                |
+| Explicit memory/service runtime modes            | Prevents accidental fail-open production behavior                                         |
+| LambdaRank-only model registry                   | Refuses incompatible/missing artifacts instead of silently changing the ranking algorithm |
+| Image job + outbox in one database boundary      | Prevents a committed job from losing its Kafka request silently                           |
+| Idempotency key and job lease                    | Protects provider cost when HTTP retries or Kafka redelivery occur                        |
+| Server-controlled CDN allow-list                 | Reduces SSRF and prevents arbitrary URLs from reaching a vision provider                  |
+| Internal token for ranking routes                | Separates service-to-service authorization from browser/user permissions                  |
 
 ## 17. Operational Notes
 
 - Run the API, image worker, embedding worker, and outbox relay as separate processes when their workloads are enabled.
-- Monitor provider timeout/rate-limit errors, Kafka DLQ volume, outbox attempts, job failure stages, model version, and fallback rate.
-- A ranking model is considered ready only when the artifact loads and its feature count matches `RANKING_EXPECTED_FEATURES`.
+- Monitor provider timeout/rate-limit errors, Kafka DLQ volume, outbox attempts, job failure stages, model version, model readiness, and ranking-unavailable responses.
+- A ranking model is considered ready only when the artifact, LambdaRank objective, feature count, version, and monotone-constraint metadata match the serving contract.
 - Never log prompts, raw image bytes, vectors, access tokens, provider keys, or full internal event payloads.
 - If Redis or Kafka is unavailable, follow the module-specific failure policy; do not silently convert service mode to memory mode.
 
@@ -568,7 +585,7 @@ No. Browser traffic goes through API Gateway, which supplies trusted user contex
 
 ### What happens when the ranking model is unavailable?
 
-`registry/model_registry.py` returns the deterministic `ranking-fallback-v1` implementation. Recommendation Service can therefore continue using its Standard/Hybrid baseline without recording a false ML result.
+`registry/model_registry.py` reports the model as unavailable. The recommendation endpoint returns an unavailable response; it does not apply a formula-based or hybrid scoring fallback. Mount a validated LambdaRank artifact and match `RANKING_MODEL_VERSION` before enabling recommendation traffic.
 
 ### Are generated images applied automatically?
 

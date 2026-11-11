@@ -1,0 +1,18 @@
+{
+  "datasetVersion": "ranking-synthetic-v1",
+  "positiveRate": {
+    "train": {
+      "rows": 70000,
+      "positiveRate": 0.355243
+    },
+    "validation": {
+      "rows": 15000,
+      "positiveRate": 0.357467
+    },
+    "test": {
+      "rows": 15000,
+      "positiveRate": 0.349933
+    }
+  },
+  "note": "Data quality summary; model metrics are produced by AI Service evaluator."
+}

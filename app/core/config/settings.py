@@ -96,7 +96,7 @@ class Settings(BaseSettings):
     recommendation_service_url: str = "http://localhost:3006"
     internal_service_token: SecretStr | None = None
     ranking_model_path: str | None = None
-    ranking_model_version: str = "ranking-fallback-v1"
+    ranking_model_version: str = "ranking-lambdarank-v2"
     ranking_max_items: int = 300
     ranking_max_features: int = 64
     ranking_expected_features: int = 9

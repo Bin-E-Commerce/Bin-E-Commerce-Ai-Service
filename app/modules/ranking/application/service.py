@@ -46,7 +46,8 @@ class RankingPredictionService:
             ):
                 raise InvalidInputError()
             row = [float(value) for value in features]
-            if not all(math.isfinite(value) for value in row):
+            # Feature contract phải giữ miền [0, 1] như feature builder và trainer.
+            if not all(math.isfinite(value) and 0 <= value <= 1 for value in row):
                 raise InvalidInputError()
             if feature_count is None:
                 feature_count = len(row)
@@ -58,11 +59,11 @@ class RankingPredictionService:
         scores = self._model.predict(rows)
         if len(scores) != len(item_ids) or not all(math.isfinite(float(score)) for score in scores):
             raise InvalidProviderResponseError()
+        # LambdaRank trả relevance score raw; không ép [0,1] vì việc co điểm sẽ làm mất thứ tự model học.
         predictions = tuple(
             RankingPrediction(
                 item_id=item_id,
-                # Giới hạn score ở application boundary để model artifact không thể làm hỏng contract ranking.
-                score=max(0.0, min(1.0, float(score))),
+                score=float(score),
             )
             for item_id, score in zip(item_ids, scores, strict=True)
         )

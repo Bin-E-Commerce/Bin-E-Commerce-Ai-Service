@@ -24,7 +24,7 @@ class RankingPredictRequest(BaseModel):
 
 
 class RankingPredictionResponse(BaseModel):
-    """Response score theo đúng thứ tự input và model version đang phục vụ."""
+    """Response raw LambdaRank relevance score theo đúng thứ tự input."""
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -39,6 +39,5 @@ class RankingStatusResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     ready: bool
-    fallback: bool
-    model_version: str = Field(alias="modelVersion")
+    model_version: str | None = Field(alias="modelVersion")
     feature_count: int = Field(alias="featureCount")

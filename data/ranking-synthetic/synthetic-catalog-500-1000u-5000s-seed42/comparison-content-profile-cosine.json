@@ -1,0 +1,54 @@
+{
+  "evaluationType": "synthetic_only",
+  "datasetVersion": "ranking-synthetic-v1",
+  "featureSchemaVersion": "ranking-features-v2",
+  "profileMethod": "content_profile_cosine",
+  "baselineDefinition": {
+    "userVector": "persona/session profile with product=5, category=7, brand=6",
+    "itemVector": "binary productId/categoryId/brandId attributes",
+    "score": "dot(user,item)/(norm(user)*norm(item))",
+    "researchBasis": "Pazzani and Billsus (2007), Content-Based Recommendation Systems"
+  },
+  "profileSignalStrengths": {
+    "product": 5.0,
+    "category": 7.0,
+    "brand": 6.0
+  },
+  "sameTestRowsAndLabels": true,
+  "tieBreak": "ascending itemId, applied before ranking to both methods",
+  "testRows": 15000,
+  "testRequests": 750,
+  "queryDiagnostics": {
+    "queryCount": 750,
+    "meanCandidatesPerQuery": 20.0,
+    "medianCandidatesPerQuery": 20.0,
+    "minCandidatesPerQuery": 20,
+    "maxCandidatesPerQuery": 20,
+    "queriesWithAtLeast10Candidates": 750
+  },
+  "deltaContentProfileCosineMinusProjectProfileAffinity": {
+    "ndcgAt10": 0.022399184314190745,
+    "recallAt10": 0.010549768749768651
+  },
+  "metrics": {
+    "projectProfileAffinity": {
+      "auc": 0.5726049483735801,
+      "ndcgAt5": 0.4116082205181638,
+      "ndcgAt10": 0.515189274745197,
+      "recallAt5": 0.2852207126207126,
+      "recallAt10": 0.5936190883190884,
+      "mrr": 0.630735680985681,
+      "positiveRate": 0.3499333333333333
+    },
+    "contentProfileCosine": {
+      "auc": 0.5874883669868582,
+      "ndcgAt5": 0.4545942983126887,
+      "ndcgAt10": 0.5375884590593878,
+      "recallAt5": 0.31818094868094865,
+      "recallAt10": 0.604168857068857,
+      "mrr": 0.6660261571761572,
+      "positiveRate": 0.3499333333333333
+    }
+  },
+  "interpretationLimit": "Persona/session profiles and outcomes are synthetic; this comparison does not establish real-user effectiveness."
+}

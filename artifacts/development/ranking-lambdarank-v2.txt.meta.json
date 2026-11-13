@@ -1,0 +1,476 @@
+{
+  "modelVersion": "ranking-lambdarank-v2",
+  "featureCount": 9,
+  "featureSchemaVersion": "ranking-features-v3",
+  "datasetVersion": "ranking-synthetic-v1",
+  "seed": 42,
+  "trainRows": 70000,
+  "validationRows": 15000,
+  "testRows": 15000,
+  "trainQueryGroups": 3500,
+  "validationQueryGroups": 750,
+  "testQueryGroups": 750,
+  "queryDiagnostics": {
+    "train": {
+      "queryCount": 3500,
+      "meanCandidatesPerQuery": 20.0,
+      "medianCandidatesPerQuery": 20.0,
+      "minCandidatesPerQuery": 20,
+      "maxCandidatesPerQuery": 20,
+      "queriesWithAtLeast10Candidates": 3500
+    },
+    "validation": {
+      "queryCount": 750,
+      "meanCandidatesPerQuery": 20.0,
+      "medianCandidatesPerQuery": 20.0,
+      "minCandidatesPerQuery": 20,
+      "maxCandidatesPerQuery": 20,
+      "queriesWithAtLeast10Candidates": 750
+    },
+    "test": {
+      "queryCount": 750,
+      "meanCandidatesPerQuery": 20.0,
+      "medianCandidatesPerQuery": 20.0,
+      "minCandidatesPerQuery": 20,
+      "maxCandidatesPerQuery": 20,
+      "queriesWithAtLeast10Candidates": 750
+    }
+  },
+  "positiveRate": 0.35524285714285714,
+  "bestIteration": 18,
+  "objective": "lambdarank",
+  "monotoneConstraints": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    -1
+  ],
+  "rankingMetric": "NDCG@10",
+  "featureNames": [
+    "profileAffinity",
+    "sessionContext",
+    "semanticSimilarity",
+    "coBehavior",
+    "popularity",
+    "freshness",
+    "quality",
+    "exploration",
+    "negativePenalty"
+  ],
+  "featureAblation": "Each feature omitted in a separately retrained model; compare on identical held-out queries.",
+  "validationMetrics": {
+    "auc": 0.5952005396548645,
+    "ndcgAt5": 0.463078956436107,
+    "ndcgAt10": 0.5425781537315233,
+    "recallAt5": 0.31307427017427014,
+    "recallAt10": 0.6039535908535909,
+    "mrr": 0.6766674966359176,
+    "positiveRate": 0.35746666666666665
+  },
+  "testMetrics": {
+    "auc": 0.5873168549580301,
+    "ndcgAt5": 0.44582069182974304,
+    "ndcgAt10": 0.5327874648416973,
+    "recallAt5": 0.30905896695896695,
+    "recallAt10": 0.6012204832204833,
+    "mrr": 0.6604143769084946,
+    "positiveRate": 0.3499333333333333
+  },
+  "comparisonMetrics": {
+    "validation": {
+      "lambdaRank": {
+        "auc": 0.5952005396548645,
+        "ndcgAt5": 0.463078956436107,
+        "ndcgAt10": 0.5425781537315233,
+        "recallAt5": 0.31307427017427014,
+        "recallAt10": 0.6039535908535909,
+        "mrr": 0.6766674966359176,
+        "positiveRate": 0.35746666666666665
+      },
+      "profileAffinityOnly": {
+        "auc": 0.573415173092893,
+        "ndcgAt5": 0.42557954911363755,
+        "ndcgAt10": 0.5177928581117566,
+        "recallAt5": 0.29234043734043735,
+        "recallAt10": 0.5905441151441151,
+        "mrr": 0.6386111740111741,
+        "positiveRate": 0.35746666666666665
+      },
+      "popularityOnly": {
+        "auc": 0.5545011977409141,
+        "ndcgAt5": 0.43869976083292106,
+        "ndcgAt10": 0.4965717755801309,
+        "recallAt5": 0.3007034188034188,
+        "recallAt10": 0.5482419358419358,
+        "mrr": 0.6439393889335066,
+        "positiveRate": 0.35746666666666665
+      },
+      "featureOnly": {
+        "profileAffinity": {
+          "auc": 0.573415173092893,
+          "ndcgAt5": 0.42557954911363755,
+          "ndcgAt10": 0.5177928581117566,
+          "recallAt5": 0.29234043734043735,
+          "recallAt10": 0.5905441151441151,
+          "mrr": 0.6386111740111741,
+          "positiveRate": 0.35746666666666665
+        },
+        "sessionContext": {
+          "auc": 0.5263723884050598,
+          "ndcgAt5": 0.42699555105498815,
+          "ndcgAt10": 0.522047640245748,
+          "recallAt5": 0.29121037481037476,
+          "recallAt10": 0.5935652125652126,
+          "mrr": 0.6462205096646273,
+          "positiveRate": 0.35746666666666665
+        },
+        "semanticSimilarity": {
+          "auc": 0.5239132926756492,
+          "ndcgAt5": 0.4271596654251379,
+          "ndcgAt10": 0.5208181323508495,
+          "recallAt5": 0.29256971546971544,
+          "recallAt10": 0.5913732785732786,
+          "mrr": 0.6440715197656375,
+          "positiveRate": 0.35746666666666665
+        },
+        "coBehavior": {
+          "auc": 0.5036494448533364,
+          "ndcgAt5": 0.37715688905254974,
+          "ndcgAt10": 0.47023505348319306,
+          "recallAt5": 0.2603256743256743,
+          "recallAt10": 0.541517131017131,
+          "mrr": 0.6036826025826026,
+          "positiveRate": 0.35746666666666665
+        },
+        "popularity": {
+          "auc": 0.5545011977409141,
+          "ndcgAt5": 0.43869976083292106,
+          "ndcgAt10": 0.4965717755801309,
+          "recallAt5": 0.3007034188034188,
+          "recallAt10": 0.5482419358419358,
+          "mrr": 0.6439393889335066,
+          "positiveRate": 0.35746666666666665
+        },
+        "freshness": {
+          "auc": 0.495989266888441,
+          "ndcgAt5": 0.3854274975616009,
+          "ndcgAt10": 0.48569312451709246,
+          "recallAt5": 0.2696697635697636,
+          "recallAt10": 0.566142945942946,
+          "mrr": 0.5829556665556666,
+          "positiveRate": 0.35746666666666665
+        },
+        "quality": {
+          "auc": 0.5146480223013793,
+          "ndcgAt5": 0.3838705929036021,
+          "ndcgAt10": 0.45840548664467157,
+          "recallAt5": 0.26171420801420797,
+          "recallAt10": 0.5128440004440005,
+          "mrr": 0.6093233716174893,
+          "positiveRate": 0.35746666666666665
+        },
+        "exploration": {
+          "auc": 0.4978099789786775,
+          "ndcgAt5": 0.44007264882544816,
+          "ndcgAt10": 0.5292500428636894,
+          "recallAt5": 0.30142145632145634,
+          "recallAt10": 0.6022681022681022,
+          "mrr": 0.6468553058053058,
+          "positiveRate": 0.35746666666666665
+        },
+        "negativePenalty": {
+          "auc": 0.5,
+          "ndcgAt5": 0.43869976083292106,
+          "ndcgAt10": 0.5281438082160667,
+          "recallAt5": 0.3007034188034188,
+          "recallAt10": 0.601177096977097,
+          "mrr": 0.6443863062863063,
+          "positiveRate": 0.35746666666666665
+        }
+      },
+      "withoutFeature": {
+        "profileAffinity": {
+          "auc": 0.576062285391369,
+          "ndcgAt5": 0.450277624731587,
+          "ndcgAt10": 0.5219914691519457,
+          "recallAt5": 0.30768061938061936,
+          "recallAt10": 0.5782295408295408,
+          "mrr": 0.663482760376878,
+          "positiveRate": 0.35746666666666665
+        },
+        "sessionContext": {
+          "auc": 0.594479433756363,
+          "ndcgAt5": 0.463402527221799,
+          "ndcgAt10": 0.5426587676725928,
+          "recallAt5": 0.31454396714396715,
+          "recallAt10": 0.6039123210123211,
+          "mrr": 0.6759430766114977,
+          "positiveRate": 0.35746666666666665
+        },
+        "semanticSimilarity": {
+          "auc": 0.5911824147531154,
+          "ndcgAt5": 0.45317717657901485,
+          "ndcgAt10": 0.5365045738664354,
+          "recallAt5": 0.3107605135605136,
+          "recallAt10": 0.6037049136049136,
+          "mrr": 0.6588503557444734,
+          "positiveRate": 0.35746666666666665
+        },
+        "coBehavior": {
+          "auc": 0.5952387466960439,
+          "ndcgAt5": 0.46089961705328447,
+          "ndcgAt10": 0.5426182435267538,
+          "recallAt5": 0.31005464535464533,
+          "recallAt10": 0.6030616235616235,
+          "mrr": 0.6786055104739315,
+          "positiveRate": 0.35746666666666665
+        },
+        "popularity": {
+          "auc": 0.5929980957819658,
+          "ndcgAt5": 0.4590134349784241,
+          "ndcgAt10": 0.5416231555212585,
+          "recallAt5": 0.31163928663928664,
+          "recallAt10": 0.6049944758944759,
+          "mrr": 0.6730373860058071,
+          "positiveRate": 0.35746666666666665
+        },
+        "freshness": {
+          "auc": 0.5952691168916029,
+          "ndcgAt5": 0.4617842740557983,
+          "ndcgAt10": 0.5445481146452186,
+          "recallAt5": 0.3106487290487291,
+          "recallAt10": 0.6056737928737929,
+          "mrr": 0.6790510945195156,
+          "positiveRate": 0.35746666666666665
+        },
+        "quality": {
+          "auc": 0.5945574635834362,
+          "ndcgAt5": 0.4698186680452341,
+          "ndcgAt10": 0.5465224203424618,
+          "recallAt5": 0.31884571354571356,
+          "recallAt10": 0.6050086321086321,
+          "mrr": 0.675026109076109,
+          "positiveRate": 0.35746666666666665
+        },
+        "exploration": {
+          "auc": 0.5952005396548645,
+          "ndcgAt5": 0.463078956436107,
+          "ndcgAt10": 0.5425781537315233,
+          "recallAt5": 0.31307427017427014,
+          "recallAt10": 0.6039535908535909,
+          "mrr": 0.6766674966359176,
+          "positiveRate": 0.35746666666666665
+        },
+        "negativePenalty": {
+          "auc": 0.5952005396548645,
+          "ndcgAt5": 0.463078956436107,
+          "ndcgAt10": 0.5425781537315233,
+          "recallAt5": 0.31307427017427014,
+          "recallAt10": 0.6039535908535909,
+          "mrr": 0.6766674966359176,
+          "positiveRate": 0.35746666666666665
+        }
+      }
+    },
+    "test": {
+      "lambdaRank": {
+        "auc": 0.5873168549580301,
+        "ndcgAt5": 0.44582069182974304,
+        "ndcgAt10": 0.5327874648416973,
+        "recallAt5": 0.30905896695896695,
+        "recallAt10": 0.6012204832204833,
+        "mrr": 0.6604143769084946,
+        "positiveRate": 0.3499333333333333
+      },
+      "profileAffinityOnly": {
+        "auc": 0.5726049483735801,
+        "ndcgAt5": 0.41457548998875515,
+        "ndcgAt10": 0.5164264089172368,
+        "recallAt5": 0.2839859843859844,
+        "recallAt10": 0.5932673326673327,
+        "mrr": 0.6402947570947571,
+        "positiveRate": 0.3499333333333333
+      },
+      "popularityOnly": {
+        "auc": 0.5556545543570044,
+        "ndcgAt5": 0.4370494399233117,
+        "ndcgAt10": 0.4963880670061116,
+        "recallAt5": 0.3032077404077404,
+        "recallAt10": 0.5477123839123839,
+        "mrr": 0.6480819106819107,
+        "positiveRate": 0.3499333333333333
+      },
+      "featureOnly": {
+        "profileAffinity": {
+          "auc": 0.5726049483735801,
+          "ndcgAt5": 0.41457548998875515,
+          "ndcgAt10": 0.5164264089172368,
+          "recallAt5": 0.2839859843859844,
+          "recallAt10": 0.5932673326673327,
+          "mrr": 0.6402947570947571,
+          "positiveRate": 0.3499333333333333
+        },
+        "sessionContext": {
+          "auc": 0.5253355611303667,
+          "ndcgAt5": 0.4171395569455492,
+          "ndcgAt10": 0.5107960789606462,
+          "recallAt5": 0.2939842046842047,
+          "recallAt10": 0.5891210604210605,
+          "mrr": 0.6176535834535835,
+          "positiveRate": 0.3499333333333333
+        },
+        "semanticSimilarity": {
+          "auc": 0.5224783330886883,
+          "ndcgAt5": 0.4094292685415594,
+          "ndcgAt10": 0.5073788565415946,
+          "recallAt5": 0.2905779035779036,
+          "recallAt10": 0.5907417434417435,
+          "mrr": 0.6027493025493025,
+          "positiveRate": 0.3499333333333333
+        },
+        "coBehavior": {
+          "auc": 0.5016533419622402,
+          "ndcgAt5": 0.36511892334656093,
+          "ndcgAt10": 0.4603220995289283,
+          "recallAt5": 0.2533202464202464,
+          "recallAt10": 0.53390259000259,
+          "mrr": 0.5983943191884369,
+          "positiveRate": 0.3499333333333333
+        },
+        "popularity": {
+          "auc": 0.5556545543570044,
+          "ndcgAt5": 0.4370494399233117,
+          "ndcgAt10": 0.4963880670061116,
+          "recallAt5": 0.3032077404077404,
+          "recallAt10": 0.5477123839123839,
+          "mrr": 0.6480819106819107,
+          "positiveRate": 0.3499333333333333
+        },
+        "freshness": {
+          "auc": 0.49955730417438027,
+          "ndcgAt5": 0.3901377666903997,
+          "ndcgAt10": 0.4883075592934344,
+          "recallAt5": 0.2804647241647242,
+          "recallAt10": 0.572850160950161,
+          "mrr": 0.5856669354610531,
+          "positiveRate": 0.3499333333333333
+        },
+        "quality": {
+          "auc": 0.5127466934870307,
+          "ndcgAt5": 0.37879623211490493,
+          "ndcgAt10": 0.4521926539981503,
+          "recallAt5": 0.26767483997484,
+          "recallAt10": 0.5116016761016762,
+          "mrr": 0.5929182743182743,
+          "positiveRate": 0.3499333333333333
+        },
+        "exploration": {
+          "auc": 0.498210655846876,
+          "ndcgAt5": 0.4355600497844831,
+          "ndcgAt10": 0.5269906590282618,
+          "recallAt5": 0.30273366633366633,
+          "recallAt10": 0.6012289969289969,
+          "mrr": 0.6466227994227994,
+          "positiveRate": 0.3499333333333333
+        },
+        "negativePenalty": {
+          "auc": 0.5,
+          "ndcgAt5": 0.4370494399233117,
+          "ndcgAt10": 0.527743067938098,
+          "recallAt5": 0.3032077404077404,
+          "recallAt10": 0.6016459281459281,
+          "mrr": 0.6483186147186147,
+          "positiveRate": 0.3499333333333333
+        }
+      },
+      "withoutFeature": {
+        "profileAffinity": {
+          "auc": 0.5716125973782819,
+          "ndcgAt5": 0.4261222404392761,
+          "ndcgAt10": 0.5085077925589176,
+          "recallAt5": 0.2999403041403041,
+          "recallAt10": 0.5763171643171644,
+          "mrr": 0.6293291005291005,
+          "positiveRate": 0.3499333333333333
+        },
+        "sessionContext": {
+          "auc": 0.5876696185778406,
+          "ndcgAt5": 0.4468259257765465,
+          "ndcgAt10": 0.5322335025056703,
+          "recallAt5": 0.31035641765641764,
+          "recallAt10": 0.601627442927443,
+          "mrr": 0.655932895427013,
+          "positiveRate": 0.3499333333333333
+        },
+        "semanticSimilarity": {
+          "auc": 0.5889961234979607,
+          "ndcgAt5": 0.44878428733251335,
+          "ndcgAt10": 0.533374263418901,
+          "recallAt5": 0.3092117327117327,
+          "recallAt10": 0.5974895400895401,
+          "mrr": 0.6683516236200447,
+          "positiveRate": 0.3499333333333333
+        },
+        "coBehavior": {
+          "auc": 0.5882652362750374,
+          "ndcgAt5": 0.44710348951933465,
+          "ndcgAt10": 0.5314596602046844,
+          "recallAt5": 0.3118910977910978,
+          "recallAt10": 0.5997607762607763,
+          "mrr": 0.6587746943688121,
+          "positiveRate": 0.3499333333333333
+        },
+        "popularity": {
+          "auc": 0.5864037783327233,
+          "ndcgAt5": 0.44603365043656873,
+          "ndcgAt10": 0.5279405434287087,
+          "recallAt5": 0.3116437192437192,
+          "recallAt10": 0.5962916083916084,
+          "mrr": 0.6548992426676638,
+          "positiveRate": 0.3499333333333333
+        },
+        "freshness": {
+          "auc": 0.587901043078777,
+          "ndcgAt5": 0.44949239892454695,
+          "ndcgAt10": 0.533533127640098,
+          "recallAt5": 0.31241086691086695,
+          "recallAt10": 0.6026062456062456,
+          "mrr": 0.6614233235174412,
+          "positiveRate": 0.3499333333333333
+        },
+        "quality": {
+          "auc": 0.5850805655213756,
+          "ndcgAt5": 0.44396950695666815,
+          "ndcgAt10": 0.5294409447677787,
+          "recallAt5": 0.3105152107152107,
+          "recallAt10": 0.5975957116957117,
+          "mrr": 0.6549929052429052,
+          "positiveRate": 0.3499333333333333
+        },
+        "exploration": {
+          "auc": 0.5873168549580301,
+          "ndcgAt5": 0.44582069182974304,
+          "ndcgAt10": 0.5327874648416973,
+          "recallAt5": 0.30905896695896695,
+          "recallAt10": 0.6012204832204833,
+          "mrr": 0.6604143769084946,
+          "positiveRate": 0.3499333333333333
+        },
+        "negativePenalty": {
+          "auc": 0.5873168549580301,
+          "ndcgAt5": 0.44582069182974304,
+          "ndcgAt10": 0.5327874648416973,
+          "recallAt5": 0.30905896695896695,
+          "recallAt10": 0.6012204832204833,
+          "mrr": 0.6604143769084946,
+          "positiveRate": 0.3499333333333333
+        }
+      }
+    }
+  }
+}

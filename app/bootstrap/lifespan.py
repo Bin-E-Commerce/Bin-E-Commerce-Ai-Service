@@ -5,7 +5,7 @@ memory adapter chỉ hoạt động khi `AI_RUNTIME_MODE=memory` được cấu 
 """
 
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 
 import httpx
 from fastapi import FastAPI
@@ -20,6 +20,8 @@ from app.modules.product_content.infrastructure.providers.provider_factory impor
 from app.modules.product_content.infrastructure.providers.unavailable_provider import UnavailableProductContentProvider
 from app.modules.product_content.infrastructure.rate_limiting.memory_rate_limiter import MemoryRateLimiter
 from app.modules.ranking.infrastructure.registry.model_registry import build_ranking_model
+from app.modules.search_ranking.infrastructure.query_embedding_provider import build_search_query_embedding_provider
+from app.modules.search_ranking.infrastructure.registry import build_search_reranker
 from app.shared.infrastructure.redis import RedisRateLimiter, RedisResultCache
 
 
@@ -54,51 +56,53 @@ async def application_lifespan(application: FastAPI) -> AsyncIterator[None]:
     configure_logging()
     settings = get_settings()
     validate_runtime_settings(settings)
-    limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
-    application.state.http_client = httpx.AsyncClient(limits=limits, timeout=httpx.Timeout(30.0, connect=5.0))
-    application.state.ai_runtime_mode = settings.ai_runtime_mode
-    name_provider: ProductNameProvider
-    description_provider: ProductDescriptionProvider
-    if settings.ai_runtime_mode == "memory" and (
-        settings.openai_api_key is None or not settings.openai_api_key.get_secret_value()
-    ):
-        # Cho phép AI HTTP boot cho ranking/health; content endpoint sẽ trả lỗi cấu hình, không tạo dữ liệu giả.
-        unavailable_provider = UnavailableProductContentProvider()
-        name_provider = unavailable_provider
-        description_provider = unavailable_provider
-    else:
-        name_provider, description_provider = build_product_content_providers(settings)
-    application.state.product_name_provider = name_provider
-    application.state.product_description_provider = description_provider
-    application.state.ranking_model = build_ranking_model(settings)
+    async with AsyncExitStack() as resources:
+        # Callback được đăng ký ngay sau mỗi lần acquire để startup lỗi giữa chừng vẫn giải phóng tài nguyên trước đó.
+        limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
+        http_client = httpx.AsyncClient(limits=limits, timeout=httpx.Timeout(30.0, connect=5.0))
+        resources.push_async_callback(http_client.aclose)
+        application.state.http_client = http_client
+        application.state.ai_runtime_mode = settings.ai_runtime_mode
+        name_provider: ProductNameProvider
+        description_provider: ProductDescriptionProvider
+        if settings.ai_runtime_mode == "memory" and (
+            settings.openai_api_key is None or not settings.openai_api_key.get_secret_value()
+        ):
+            # Cho phép AI HTTP boot cho ranking/health; content endpoint sẽ trả lỗi cấu hình, không tạo dữ liệu giả.
+            unavailable_provider = UnavailableProductContentProvider()
+            name_provider = unavailable_provider
+            description_provider = unavailable_provider
+        else:
+            name_provider, description_provider = build_product_content_providers(settings)
+        application.state.product_name_provider = name_provider
+        application.state.product_description_provider = description_provider
+        application.state.ranking_model = build_ranking_model(settings)
+        application.state.search_reranker = build_search_reranker(settings)
+        search_embedding_provider = build_search_query_embedding_provider(settings)
+        application.state.search_query_embedding_provider = search_embedding_provider
+        if search_embedding_provider is not None:
+            resources.push_async_callback(search_embedding_provider.aclose)
 
-    if settings.ai_runtime_mode == "memory":
-        application.state.result_cache = MemoryResultCache()
-        application.state.rate_limiter = MemoryRateLimiter()
-        application.state.image_optimization_repository = InMemoryImageOptimizationJobRepository()
-        application.state.image_optimization_publisher = InMemoryOptimizationEventPublisher()
-    else:
-        from redis.asyncio import Redis
-        from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        if settings.ai_runtime_mode == "memory":
+            application.state.result_cache = MemoryResultCache()
+            application.state.rate_limiter = MemoryRateLimiter()
+            application.state.image_optimization_repository = InMemoryImageOptimizationJobRepository()
+            application.state.image_optimization_publisher = InMemoryOptimizationEventPublisher()
+        else:
+            from redis.asyncio import Redis
+            from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-        if settings.database_url is None or settings.redis_url is None:
-            raise RuntimeError("Validated service runtime is missing database or Redis configuration")
-        engine = create_async_engine(settings.database_url, pool_pre_ping=True)
-        redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
-        await redis_client.ping()
-        application.state.image_session_factory = async_sessionmaker(engine, expire_on_commit=False)
-        application.state.image_database_engine = engine
-        application.state.redis_client = redis_client
-        application.state.result_cache = RedisResultCache(redis_client)
-        application.state.rate_limiter = RedisRateLimiter(redis_client)
+            if settings.database_url is None or settings.redis_url is None:
+                raise RuntimeError("Validated service runtime is missing database or Redis configuration")
+            engine = create_async_engine(settings.database_url, pool_pre_ping=True)
+            resources.push_async_callback(engine.dispose)
+            application.state.image_database_engine = engine
+            redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
+            resources.push_async_callback(redis_client.aclose)
+            application.state.redis_client = redis_client
+            await redis_client.ping()
+            application.state.image_session_factory = async_sessionmaker(engine, expire_on_commit=False)
+            application.state.result_cache = RedisResultCache(redis_client)
+            application.state.rate_limiter = RedisRateLimiter(redis_client)
 
-    try:
         yield
-    finally:
-        await application.state.http_client.aclose()
-        redis_client = getattr(application.state, "redis_client", None)
-        if redis_client is not None:
-            await redis_client.aclose()
-        stored_engine = getattr(application.state, "image_database_engine", None)
-        if stored_engine is not None:
-            await stored_engine.dispose()

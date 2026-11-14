@@ -18,6 +18,7 @@ from app.core.errors.exceptions import (
     RankingModelUnavailableError,
     RateLimitExceededError,
     ResourceNotFoundError,
+    SearchRerankerUnavailableError,
     UpstreamConflictError,
     UpstreamRequestError,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "OptimizationJobNotReadyError",
     "ProviderUnavailableError",
     "RankingModelUnavailableError",
+    "SearchRerankerUnavailableError",
     "ProviderConfigurationError",
     "ProviderRateLimitedError",
     "ProviderRequestRejectedError",

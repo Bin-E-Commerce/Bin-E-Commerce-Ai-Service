@@ -84,6 +84,15 @@ class RankingModelUnavailableError(AppError):
     public_message = "The recommendation ranking model is unavailable."
 
 
+# Search phải báo model chưa sẵn sàng để Product Service chủ động dùng retrieval hiện có.
+class SearchRerankerUnavailableError(AppError):
+    """Artifact Cross-Encoder search chưa có hoặc không khớp contract."""
+
+    status_code = 503
+    code = "AI_SEARCH_RERANKER_UNAVAILABLE"
+    public_message = "The search ranking model is unavailable."
+
+
 # Lỗi riêng cho workflow nền tùy chỉnh khi service chưa có khóa mã hóa dùng chung giữa API và worker.
 class BackgroundConfigurationError(AppError):
     """Cấu hình bảo mật của mô tả background tùy chỉnh chưa sẵn sàng."""

@@ -3,7 +3,7 @@
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     ranking_max_items: int = 300
     ranking_max_features: int = 64
     ranking_expected_features: int = 9
+    search_reranker_model_path: str | None = None
+    search_reranker_tokenizer_path: str | None = None
+    search_reranker_model_version: str = Field(default="search-reranker-v1", min_length=1, max_length=80)
+    search_reranker_max_items: int = Field(default=100, ge=1, le=100)
+    search_reranker_max_product_chars: int = Field(default=2400, ge=100, le=10_000)
+    search_reranker_max_sequence_length: int = Field(default=384, ge=64, le=512)
+    search_reranker_intra_op_threads: int = Field(default=2, ge=1, le=8)
+    search_query_embedding_timeout_seconds: float = Field(default=4.0, gt=0, le=10)
+    search_query_embedding_cache_ttl_seconds: int = Field(default=600, ge=0, le=3600)
 
     model_config = SettingsConfigDict(
         env_file=".env",

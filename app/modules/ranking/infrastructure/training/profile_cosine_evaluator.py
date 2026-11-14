@@ -180,15 +180,17 @@ def evaluate_synthetic_profile_cosine(dataset_dir: Path) -> dict[str, Any]:
     request_ids = {row.request_id for row in rows}
     profile_metrics = evaluate_predictions(rows, profile_scores)
     cosine_metrics = evaluate_predictions(rows, cosine_scores)
-    # Delta dương nghĩa cosine cao hơn công thức dự án; metric không xác định thì giữ None.
-    delta_metrics = {
-        metric_name: (
-            cosine_metrics[metric_name] - profile_metrics[metric_name]
-            if cosine_metrics[metric_name] is not None and profile_metrics[metric_name] is not None
-            else None
-        )
-        for metric_name in ("ndcgAt10", "recallAt10")
-    }
+    # Chuyển metric sang biến cục bộ để mypy thu hẹp Optional sau khi kiểm tra None.
+    # Nếu một phía không tính được metric thì delta cũng không được giả định thành số.
+    delta_metrics: dict[str, float | None] = {}
+    for metric_name in ("ndcgAt10", "recallAt10"):
+        cosine_metric = cosine_metrics[metric_name]
+        profile_metric = profile_metrics[metric_name]
+        if cosine_metric is None or profile_metric is None:
+            delta_metrics[metric_name] = None
+            continue
+
+        delta_metrics[metric_name] = cosine_metric - profile_metric
     return {
         "evaluationType": "synthetic_only",
         "datasetVersion": manifest.get("datasetVersion"),

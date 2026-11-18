@@ -19,10 +19,10 @@ tests/
 scripts/
 artifacts/
 !artifacts/
-!artifacts/synthetic/
-!artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt
-!artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt.meta.json
-!artifacts/synthetic/ranking-lgbm-synthetic-v1-full.txt.metrics.json
+!artifacts/development/
+!artifacts/development/ranking-lambdarank-v2.txt
+!artifacts/development/ranking-lambdarank-v2.txt.meta.json
+!artifacts/development/ranking-lambdarank-v2.txt.metrics.json
 .git/
 .gitignore
 README.md

@@ -54,18 +54,18 @@ The design follows familiar Hexagonal/Clean Architecture ideas: the domain and u
 
 ## 2. Service at a glance
 
-|                      |                                                                                           |
-| -------------------- | ----------------------------------------------------------------------------------------- |
-| **Domain**           | Seller AI assistance and recommendation infrastructure                                    |
-| **HTTP runtime**     | FastAPI + Uvicorn                                                                         |
-| **Language**         | Python 3.12                                                                               |
-| **Persistence**      | PostgreSQL through SQLAlchemy async adapters                                              |
-| **Cache and limits** | Redis in service mode; in-memory adapters only in explicit memory mode                    |
-| **Messaging**        | Kafka through `aiokafka`                                                                  |
-| **AI providers**     | Configured OpenAI text/image/embedding adapters; provider ports remain replaceable        |
-| **Ranking**          | Trained LightGBM LambdaRank artifact; unavailable if a compatible artifact is not mounted |
-| **Default port**     | `3009`                                                                                    |
-| **Entry point**      | `app.entrypoints.api:app`                                                                 |
+|                      |                                                                                                         |
+| -------------------- | ------------------------------------------------------------------------------------------------------- |
+| **Domain**           | Seller AI assistance and recommendation infrastructure                                                  |
+| **HTTP runtime**     | FastAPI + Uvicorn                                                                                       |
+| **Language**         | Python 3.12                                                                                             |
+| **Persistence**      | PostgreSQL through SQLAlchemy async adapters                                                            |
+| **Cache and limits** | Redis in service mode; in-memory adapters only in explicit memory mode                                  |
+| **Messaging**        | Kafka through `aiokafka`                                                                                |
+| **AI providers**     | Configured OpenAI text/image/embedding adapters; provider ports remain replaceable                      |
+| **Ranking**          | Trained LightGBM LambdaRank artifact; unavailable if the configured artifact is missing or incompatible |
+| **Default port**     | `3009`                                                                                                  |
+| **Entry point**      | `app.entrypoints.api:app`                                                                               |
 
 ## 3. Core capabilities
 
@@ -212,8 +212,10 @@ Simulator chỉ xác nhận pipeline và không phải bằng chứng hiệu qu�
 thật. Dataset cũ trong `data/ranking-synthetic/` thiếu `requestAt` nên không còn
 được trainer nhận. Dataset mới cần có thời điểm cho từng request, request group
 không bị tách qua split, và train/validation/test phải theo thứ tự thời gian.
-Chỉ dùng model synthetic để kiểm tra trong môi trường development; không đóng
-gói nó vào runtime hoặc báo cáo metric synthetic như kết quả khách hàng thật.
+Model synthetic `ranking-lambdarank-v2` hiện được đóng gói vào image để chạy
+demo trên production theo lựa chọn của dự án. Việc phục vụ gợi ý chỉ xác nhận
+đường truyền từ tám tín hiệu qua LambdaRank tới giao diện; metric trên dữ liệu
+synthetic không chứng minh chất lượng gợi ý với người dùng thật.
 
 Sau khi kiểm tra `manifest.json`, `metrics.json` và các file JSONL, train model
 bằng split theo thời gian đã được simulator tạo sẵn:
@@ -234,10 +236,10 @@ query từng split, phân phối số candidate/query, positive rate, best itera
 NDCG/Recall@5/10, AUC, MRR, feature baselines, feature ablations, objective
 `lambdarank` và constraint giảm đơn điệu trên `negativePenalty`.
 
-Chỉ promote artifact được đánh giá bằng dữ liệu thực, nhãn impression hợp lệ và
-test theo thời gian đã khóa. AI Service không có artifact mặc định; nếu chưa mount
-artifact LambdaRank có đúng version/schema, ranking trả unavailable thay vì dùng
-scorer thay thế.
+Trước khi dùng kết quả này để kết luận hiệu quả sản phẩm, cần huấn luyện và đánh
+giá lại bằng dữ liệu impression thực, nhãn tương tác hợp lệ và test theo thời
+gian. AI Service chỉ nạp artifact LambdaRank có đúng version/schema; nếu thiếu
+hoặc sai metadata, ranking trả unavailable.
 
 ## 6. Install
 

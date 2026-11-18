@@ -93,8 +93,11 @@ COPY --from=builder /opt/venv /opt/venv
 COPY --chown=aiworker:aiworker app ./app
 COPY --chown=aiworker:aiworker migrations ./migrations
 COPY --chown=aiworker:aiworker alembic.ini ./alembic.ini
-# Model chỉ được mount khi đã huấn luyện trên dataset hợp lệ và metadata khớp schema LambdaRank.
-# Image không đóng gói artifact synthetic/classification để tránh phục vụ một ranker không tương thích.
+# Model LambdaRank v2 của bản demo được đóng gói cùng metadata và kết quả đo.
+# Dataset huấn luyện là synthetic; metric này chỉ chứng minh pipeline demo hoạt động.
+COPY --chown=aiworker:aiworker artifacts/development/ranking-lambdarank-v2.txt /app/artifacts/development/ranking-lambdarank-v2.txt
+COPY --chown=aiworker:aiworker artifacts/development/ranking-lambdarank-v2.txt.meta.json /app/artifacts/development/ranking-lambdarank-v2.txt.meta.json
+COPY --chown=aiworker:aiworker artifacts/development/ranking-lambdarank-v2.txt.metrics.json /app/artifacts/development/ranking-lambdarank-v2.txt.metrics.json
 
 USER aiworker
 

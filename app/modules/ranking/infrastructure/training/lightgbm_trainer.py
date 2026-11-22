@@ -497,12 +497,13 @@ def main(argv: Iterable[str] | None = None) -> None:
         required=True,
         help="Directory containing train.jsonl, validation.jsonl and test.jsonl",
     )
+    # Mặc định luôn ghi artifact synthetic vào sandbox để không vô tình lấy đường dẫn model serving từ environment.
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(settings.ranking_model_path or "artifacts/synthetic/ranking-lambdarank-synthetic-v1.txt"),
+        default=Path("artifacts/synthetic/ranking-lambdarank-synthetic-v3.txt"),
     )
-    parser.add_argument("--version", default=settings.ranking_model_version)
+    parser.add_argument("--version", default="ranking-lambdarank-synthetic-v3")
     parser.add_argument("--features", type=int, default=settings.ranking_expected_features)
     parser.add_argument("--seed", type=int, default=42)
     args = parser.parse_args(list(argv) if argv is not None else None)

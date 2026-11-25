@@ -6,6 +6,7 @@ File không lưu secret, user identity, prompt, raw catalog text hoặc vector.
 
 import os
 from collections.abc import Mapping
+from threading import Lock
 from time import monotonic
 from typing import TypedDict
 
@@ -21,9 +22,11 @@ class HistogramSample(TypedDict):
 def _render_labels(labels: tuple[tuple[str, str], ...]) -> str:
     if not labels:
         return ""
-    rendered = ",".join(
-        f'{key}="{value.replace(chr(92), chr(92) + chr(92)).replace(chr(34), chr(92) + chr(34))}"' for key, value in labels
-    )
+    rendered_labels = []
+    for key, value in labels:
+        escaped_value = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+        rendered_labels.append(f'{key}="{escaped_value}"')
+    rendered = ",".join(rendered_labels)
     return "{" + rendered + "}"
 
 
@@ -48,6 +51,8 @@ class MetricsRegistry:
         self._counters: dict[tuple[str, tuple[tuple[str, str], ...]], int] = {}
         self._gauges: dict[tuple[str, tuple[tuple[str, str], ...]], float] = {}
         self._histograms: dict[tuple[str, tuple[tuple[str, str], ...]], HistogramSample] = {}
+        # HTTP event loop và inference worker cùng ghi registry nên mọi snapshot cần một khóa chung.
+        self._lock = Lock()
         self._started_at = monotonic()
 
     # Tăng counter với label đã lọc; caller không thể vô tình đưa actor/product identifier vào metric.
@@ -68,20 +73,26 @@ class MetricsRegistry:
         }
         safe_labels = tuple(sorted((key, value) for key, value in (labels or {}).items() if key in allowed))
         key = (name, safe_labels)
-        self._counters[key] = self._counters.get(key, 0) + amount
+        # Đọc-cộng-ghi phải nguyên tử giữa request thread và thread pool của model.
+        with self._lock:
+            self._counters[key] = self._counters.get(key, 0) + amount
 
     # Ghi giá trị hiện tại cho dependency hoặc một trạng thái vận hành bounded.
     def set_gauge(self, name: str, value: float, labels: Mapping[str, str] | None = None) -> None:
         allowed = {"service", "dependency", "consumer", "topic"}
         safe_labels = tuple(sorted((key, value) for key, value in (labels or {}).items() if key in allowed))
-        self._gauges[(name, safe_labels)] = value
+        # Giữ gauge cập nhật cùng lock với render để scrape không thấy state đang ghi dở.
+        with self._lock:
+            self._gauges[(name, safe_labels)] = value
 
     # Cộng hoặc trừ gauge trong cùng event loop để phản ánh request đồng thời chính xác.
     def add_gauge(self, name: str, amount: float, labels: Mapping[str, str] | None = None) -> None:
         allowed = {"service", "dependency", "consumer", "topic"}
         safe_labels = tuple(sorted((key, value) for key, value in (labels or {}).items() if key in allowed))
         key = (name, safe_labels)
-        self._gauges[key] = max(0.0, self._gauges.get(key, 0.0) + amount)
+        # Cộng gauge trong critical section để không mất cập nhật khi HTTP và worker cùng hoàn tất.
+        with self._lock:
+            self._gauges[key] = max(0.0, self._gauges.get(key, 0.0) + amount)
 
     # Lưu histogram bounded để Prometheus tính p95 mà không giữ raw request hoặc payload AI.
     def observe_histogram(self, name: str, value: float, labels: Mapping[str, str] | None = None) -> None:
@@ -89,16 +100,19 @@ class MetricsRegistry:
         safe_labels = tuple(sorted((key, value) for key, value in (labels or {}).items() if key in allowed))
         key = (name, safe_labels)
         buckets = [0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]
-        sample = self._histograms.setdefault(
-            key,
-            {"buckets": buckets, "counts": [0] * len(buckets), "sum": 0.0, "count": 0},
-        )
         safe_value = value if value >= 0 else 0.0
-        sample["sum"] = float(sample["sum"]) + safe_value
-        sample["count"] = int(sample["count"]) + 1
-        sample["counts"] = [
-            count + (1 if safe_value <= bucket else 0) for bucket, count in zip(sample["buckets"], sample["counts"], strict=True)
-        ]
+        # Tạo sample và cập nhật bucket/sum/count dưới cùng khóa để các ba trường luôn nhất quán.
+        with self._lock:
+            sample = self._histograms.setdefault(
+                key,
+                {"buckets": buckets, "counts": [0] * len(buckets), "sum": 0.0, "count": 0},
+            )
+            sample["sum"] = float(sample["sum"]) + safe_value
+            sample["count"] = int(sample["count"]) + 1
+            sample["counts"] = [
+                count + (1 if safe_value <= bucket else 0)
+                for bucket, count in zip(sample["buckets"], sample["counts"], strict=True)
+            ]
 
     # Xuất snapshot Prometheus mà không expose dữ liệu request, provider response hoặc identity.
     def render(self) -> str:
@@ -110,17 +124,36 @@ class MetricsRegistry:
             "# TYPE ai_process_resident_memory_bytes gauge",
             f"ai_process_resident_memory_bytes {_resident_memory_bytes()}",
         ]
-        for (name, labels), counter_value in self._counters.items():
-            lines.append(f"# TYPE {name} counter")
-            lines.append(f"{name}{_render_labels(labels)} {counter_value}")
-        for (name, labels), gauge_value in self._gauges.items():
-            lines.append(f"# TYPE {name} gauge")
-            lines.append(f"{name}{_render_labels(labels)} {gauge_value}")
-        for (name, labels), sample in self._histograms.items():
-            lines.append(f"# TYPE {name} histogram")
-            for bucket, count in zip(sample["buckets"], sample["counts"], strict=True):
-                lines.append(f"{name}_bucket{_render_labels((*labels, ('le', str(bucket))))} {count}")
-            lines.append(f"{name}_bucket{_render_labels((*labels, ('le', '+Inf')))} {sample['count']}")
-            lines.append(f"{name}_sum{_render_labels(labels)} {sample['sum']}")
-            lines.append(f"{name}_count{_render_labels(labels)} {sample['count']}")
+        # Giữ lock trong lúc copy/render để dictionary không đổi giữa lần scrape; TYPE phát một lần mỗi family.
+        with self._lock:
+            counter_samples: dict[str, list[tuple[tuple[tuple[str, str], ...], int]]] = {}
+            for (name, labels), counter_value in self._counters.items():
+                counter_samples.setdefault(name, []).append((labels, counter_value))
+            for counter_name, counter_series in sorted(counter_samples.items()):
+                lines.append(f"# TYPE {counter_name} counter")
+                for labels, counter_value in sorted(counter_series):
+                    lines.append(f"{counter_name}{_render_labels(labels)} {counter_value}")
+
+            gauge_samples: dict[str, list[tuple[tuple[tuple[str, str], ...], float]]] = {}
+            for (name, labels), gauge_value in self._gauges.items():
+                gauge_samples.setdefault(name, []).append((labels, gauge_value))
+            for gauge_name, gauge_series in sorted(gauge_samples.items()):
+                lines.append(f"# TYPE {gauge_name} gauge")
+                for labels, gauge_value in sorted(gauge_series):
+                    lines.append(f"{gauge_name}{_render_labels(labels)} {gauge_value}")
+
+            histogram_samples: dict[
+                str,
+                list[tuple[tuple[tuple[str, str], ...], HistogramSample]],
+            ] = {}
+            for (name, labels), sample in self._histograms.items():
+                histogram_samples.setdefault(name, []).append((labels, sample))
+            for histogram_name, histogram_series in sorted(histogram_samples.items()):
+                lines.append(f"# TYPE {histogram_name} histogram")
+                for labels, sample in sorted(histogram_series, key=lambda item: item[0]):
+                    for bucket, count in zip(sample["buckets"], sample["counts"], strict=True):
+                        lines.append(f"{histogram_name}_bucket{_render_labels((*labels, ('le', str(bucket))))} {count}")
+                    lines.append(f"{histogram_name}_bucket{_render_labels((*labels, ('le', '+Inf')))} {sample['count']}")
+                    lines.append(f"{histogram_name}_sum{_render_labels(labels)} {sample['sum']}")
+                    lines.append(f"{histogram_name}_count{_render_labels(labels)} {sample['count']}")
         return "\n".join(lines) + "\n"

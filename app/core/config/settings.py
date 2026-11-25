@@ -109,6 +109,14 @@ class Settings(BaseSettings):
     search_reranker_intra_op_threads: int = Field(default=2, ge=1, le=8)
     search_query_embedding_timeout_seconds: float = Field(default=4.0, gt=0, le=10)
     search_query_embedding_cache_ttl_seconds: int = Field(default=600, ge=0, le=3600)
+    # Ảnh catalog dùng PE-Core tự host; thiếu artifact chỉ tắt image indexing, không chặn text search.
+    image_search_model_path: str | None = None
+    image_search_model_version: str = "pe-core-s16-384-r255fa76e"
+    image_search_dimensions: int = Field(default=512, ge=512, le=512)
+    image_search_image_size: int = Field(default=384, ge=384, le=384)
+    image_search_max_bytes: int = Field(default=8 * 1024 * 1024, ge=1, le=8 * 1024 * 1024)
+    image_search_max_pixels: int = Field(default=20_000_000, ge=1_000_000, le=20_000_000)
+    image_search_intra_op_threads: int = Field(default=2, ge=1, le=8)
 
     model_config = SettingsConfigDict(
         env_file=".env",

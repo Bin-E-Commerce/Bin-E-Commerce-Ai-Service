@@ -20,6 +20,8 @@ from app.modules.product_content.infrastructure.providers.provider_factory impor
 from app.modules.product_content.infrastructure.providers.unavailable_provider import UnavailableProductContentProvider
 from app.modules.product_content.infrastructure.rate_limiting.memory_rate_limiter import MemoryRateLimiter
 from app.modules.ranking.infrastructure.registry.model_registry import build_ranking_model
+from app.modules.search_ranking.image_embedding.application.service import SearchImageEmbeddingService
+from app.modules.search_ranking.image_embedding.infrastructure.onnx_provider import build_search_image_embedding_provider
 from app.modules.search_ranking.infrastructure.query_embedding_provider import build_search_query_embedding_provider
 from app.modules.search_ranking.infrastructure.registry import build_search_reranker
 from app.shared.infrastructure.redis import RedisRateLimiter, RedisResultCache
@@ -82,6 +84,18 @@ async def application_lifespan(application: FastAPI) -> AsyncIterator[None]:
         application.state.search_query_embedding_provider = search_embedding_provider
         if search_embedding_provider is not None:
             resources.push_async_callback(search_embedding_provider.aclose)
+        # Artifact ảnh là tùy chọn; lỗi/thiếu model chỉ để image-indexing unavailable và không làm text search dừng.
+        image_embedding_provider = build_search_image_embedding_provider(settings)
+        application.state.search_image_embedding_service = (
+            SearchImageEmbeddingService(
+                image_embedding_provider,
+                settings.image_search_max_bytes,
+                settings.image_search_max_pixels,
+                metrics=application.state.metrics,
+            )
+            if image_embedding_provider is not None
+            else None
+        )
 
         if settings.ai_runtime_mode == "memory":
             application.state.result_cache = MemoryResultCache()

@@ -19,6 +19,7 @@ from app.core.metrics import MetricsRegistry
 from app.modules.image_optimization.presentation.api.router import router as image_optimization_router
 from app.modules.product_content.presentation.api.router import router as product_content_router
 from app.modules.ranking.presentation.api.router import router as ranking_router
+from app.modules.search_ranking.image_embedding.presentation.router import router as search_image_embedding_router
 from app.modules.search_ranking.presentation.router import router as search_ranking_router
 
 logger = logging.getLogger("app.http")
@@ -117,4 +118,5 @@ def create_application() -> FastAPI:
     application.include_router(image_optimization_router)
     application.include_router(ranking_router)
     application.include_router(search_ranking_router)
+    application.include_router(search_image_embedding_router)
     return application

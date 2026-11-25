@@ -44,6 +44,11 @@ search-training = [
   "transformers>=4.45,<5.0",
   "onnx>=1.16,<2.0",
 ]
+image-search-export = [
+  "timm>=1.0,<2.0",
+  "torch>=2.6,<3.0",
+  "onnx>=1.16,<2.0",
+]
 
 [tool.setuptools.packages.find]
 include = ["app*"]

@@ -13,3 +13,5 @@ dist/
 build/
 *.egg-info/
 .import_linter_cache
+# Artifact ONNX PE-Core được export cục bộ, không commit cùng source.
+artifacts/image-search/

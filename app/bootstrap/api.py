@@ -13,6 +13,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from starlette.responses import Response
 
+from app.bootstrap.http_metrics import record_http_request_metrics
 from app.bootstrap.lifespan import application_lifespan
 from app.core.errors import AppError
 from app.core.metrics import MetricsRegistry
@@ -62,34 +63,54 @@ def create_application() -> FastAPI:
 
         request.state.request_id = _request_id(request)
         started_at = monotonic()
-        application.state.metrics.add_gauge("http_requests_in_flight", 1, {"service": "ai-service"})
-        response = await call_next(request)
+        metrics = application.state.metrics
+        metrics.add_gauge("http_requests_in_flight", 1, {"service": "ai-service"})
+        try:
+            response = await call_next(request)
+        except Exception as error:
+            # Exception chưa thành Response vẫn được tính là 5xx; không ghi exception message có thể chứa input.
+            duration_seconds = monotonic() - started_at
+            route = request.scope.get("route")
+            labels = record_http_request_metrics(
+                metrics,
+                request.method,
+                getattr(route, "path", None),
+                500,
+                duration_seconds,
+            )
+            logger.warning(
+                "http.request.failed",
+                extra={
+                    "request_id": request.state.request_id,
+                    "method": labels["method"],
+                    "route": labels["route"],
+                    "status_code": 500,
+                    "exception_type": error.__class__.__name__,
+                    "duration_ms": round(duration_seconds * 1000),
+                },
+            )
+            raise
+        finally:
+            # Kể cả request bị exception hoặc cancellation, gauge phải trở về đúng số request còn chạy.
+            metrics.add_gauge("http_requests_in_flight", -1, {"service": "ai-service"})
+
         duration_seconds = monotonic() - started_at
         route = request.scope.get("route")
-        route_name = getattr(route, "path", request.url.path).split("?", 1)[0][:160]
-        status_class = f"{response.status_code // 100}xx"
-        application.state.metrics.increment(
-            "http_requests_total",
-            {"service": "ai-service", "method": request.method, "route": route_name, "status_class": status_class},
-        )
-        application.state.metrics.increment(
-            "http_responses_total",
-            {"service": "ai-service", "method": request.method, "route": route_name, "status_class": status_class},
-        )
-        application.state.metrics.observe_histogram(
-            "http_request_duration_seconds",
+        labels = record_http_request_metrics(
+            metrics,
+            request.method,
+            getattr(route, "path", None),
+            response.status_code,
             duration_seconds,
-            {"service": "ai-service", "method": request.method, "route": route_name, "status_class": status_class},
         )
-        application.state.metrics.add_gauge("http_requests_in_flight", -1, {"service": "ai-service"})
         if response.status_code >= 400 or duration_seconds >= 0.5:
             # Chỉ ghi request lỗi/chậm để Loki không bị ngập bởi health probe vài giây một lần.
             logger.warning(
                 "http.request.completed",
                 extra={
                     "request_id": request.state.request_id,
-                    "method": request.method,
-                    "route": route_name,
+                    "method": labels["method"],
+                    "route": labels["route"],
                     "status_code": response.status_code,
                     "duration_ms": round(duration_seconds * 1000),
                 },

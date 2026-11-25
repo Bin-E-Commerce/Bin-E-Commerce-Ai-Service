@@ -68,11 +68,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# LightGBM và ONNX Runtime dùng OpenMP khi chạy. Cài `libgomp1` cùng `zlib1g`
-# để nhận bản vá bảo mật Debian cho zlib trong image cuối; compiler toolchain
-# vẫn chỉ nằm ở builder và không bị đưa lên môi trường production.
+# LightGBM và ONNX Runtime dùng OpenMP khi chạy. Cài `libzstd1` trực tiếp để
+# nâng thư viện đã có sẵn trong base image lên bản Debian đã vá; nếu chỉ cài
+# `libgomp1` và `zlib1g`, APT không tự nâng một package nền không được yêu cầu.
+# Compiler toolchain vẫn chỉ nằm ở builder và không đi vào image production.
 RUN apt-get update \
-    && apt-get install --no-install-recommends --yes libgomp1 zlib1g \
+    && apt-get install --no-install-recommends --yes libgomp1 libzstd1 zlib1g \
     && rm -rf /var/lib/apt/lists/*
 
 # Không chạy FastAPI hoặc worker bằng root. Điều này giới hạn mức độ ảnh hưởng
